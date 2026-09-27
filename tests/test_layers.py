@@ -104,7 +104,7 @@ def test_rope_preserves_vector_norm():
     rotated = apply_rope(x, positions, inv_freq)
 
     torch.testing.assert_close(
-        rotated.linalg.vector_norm(dim=-1), x.linalg.vector_norm(dim=-1),
+        torch.linalg.norm(rotated, dim=-1), torch.linalg.norm(x, dim=-1),
         rtol=0, atol=1e-12,
     )
 
