@@ -256,7 +256,7 @@ and any change must be recorded here.
 | Choice | Current decision |
 | --- | --- |
 | Encoder block internals | TBD — paper specifies only "causal encoder" |
-| Positional scheme | TBD — decide in Stage 2 |
+| Positional scheme | RoPE, applied from explicit absolute position index |
 | FFN activation | TBD |
 | `α` learned or fixed; initial value | TBD — to be swept |
 | Memory groups `G` | `1` to start |
