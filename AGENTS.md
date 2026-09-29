@@ -265,6 +265,9 @@ and any change must be recorded here.
 | Number of heads, head dim, KV width | TBD |
 | Position numbering | Absolute, starting at 1 for BOS |
 | Batching | All sequences in a batch are aligned (same length, shared position counter). Variable-length batching is out of scope until Stage 12. |
+| Memory normalization | One `RMSNorm_E` shared across groups, feeding both keys and values: `n_t = RMSNorm_E(e_t)`; `k^g_t = RoPE(W^g_K n_t, t)`; `v^g_t = W^g_V n_t` |
+| Memory positions | RoPE on memory keys only, never on values. Cross-attention queries (Stage 6) get RoPE at the decoder's current position `t`. |
+| Memory groups | Only `G = 1` (all decoder layers read group 0) or `G = L_D` (layer ℓ reads group ℓ) are supported |
 
 ## Known ambiguities — ask, don't guess
 
