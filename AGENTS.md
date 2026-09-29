@@ -255,14 +255,16 @@ and any change must be recorded here.
 
 | Choice | Current decision |
 | --- | --- |
-| Encoder block internals | TBD — paper specifies only "causal encoder" |
+| Encoder block internals | Mirrors the decoder block without cross-attention. Per layer ℓ: `n = RMSNorm_{S,ℓ}(z)`; `q = RoPE(W_Q n, pos)`; `k = RoPE(W_K n, pos)`; `v = W_V n`; `b = z + Attn(q, k, v, causal mask)` (Attn includes `W_O`); `z' = b + FFN(RMSNorm_{F,ℓ}(b))`. No final norm on `e_t`. |
 | Positional scheme | RoPE, applied from explicit absolute position index |
-| FFN activation | TBD |
+| FFN activation | GELU, no bias, hidden width `4d` |
 | `α` learned or fixed; initial value | TBD — to be swept |
 | Memory groups `G` | `1` to start |
 | `tied` | `False` to start |
 | Readout `W_o` tied to embeddings | TBD — paper does not specify |
 | Number of heads, head dim, KV width | TBD |
+| Position numbering | Absolute, starting at 1 for BOS |
+| Batching | All sequences in a batch are aligned (same length, shared position counter). Variable-length batching is out of scope until Stage 12. |
 
 ## Known ambiguities — ask, don't guess
 
