@@ -261,7 +261,7 @@ and any change must be recorded here.
 | `α` learned or fixed; initial value | Fixed float, required constructor argument, no default. Not a learnable parameter. Swept in Stage 11. |
 | Memory groups `G` | `1` to start |
 | `tied` | `False` to start |
-| Readout `W_o` tied to embeddings | TBD — paper does not specify |
+| Readout | `W_o`: bias-free `Linear(d, vocab)`, not tied to the embedding. Model returns logits; softmax is applied in the loss. `logits_t` predicts `x_{t+1}`. |
 | Number of heads, head dim, KV width | TBD |
 | Position numbering | Absolute, starting at 1 for BOS |
 | Batching | All sequences in a batch are aligned (same length, shared position counter). Variable-length batching is out of scope until Stage 12. |
@@ -276,6 +276,9 @@ and any change must be recorded here.
 | Decoder heads | SWA and cross-attention use the same number of heads and head dim. |
 | Decoder scope | `decoder.py` processes one token through all `L_D` layers. The loop over time is in the model (Stage 7). |
 | Tying | `tied = False` only until Stage 12. |
+| Initial state `s_⋆` | Learnable, shape `(d,)`, initialized standard normal; never zero, since `RMSNorm_s` has a huge gradient at zero. Shared across the batch. |
+| Model state | Immutable snapshot: encoder cache, memory cache, `s_t`, the `L_D` window caches, and next position. Stepping returns a new state; old states stay reusable. |
+| BOS check | The first token of a fresh state must be BOS; otherwise `ValueError`. |
 
 ## Known ambiguities — ask, don't guess
 
