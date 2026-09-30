@@ -4,13 +4,20 @@ Steps are one-based throughout: step 1 uses the first warmup learning rate,
 and logits[:, i + 1] score the state after operation i.
 """
 
+import ast
 from dataclasses import asdict, replace
 import json
 import math
+from pathlib import Path
+import re
+import sys
+from types import SimpleNamespace
 
 import pytest
 import torch
 
+import train as train_module
+from objectives import state_tracking_accuracy
 from task import BOS
 from train import (
     TrainConfig,
@@ -312,3 +319,137 @@ def test_learning_rate_warmup_and_cosine_endpoints(config):
     assert all(next_rate <= rate for rate, next_rate in zip(rates[2:], rates[3:]))
     assert math.isclose(rates[-1], scheduled.min_learning_rate,
                         rel_tol=0, abs_tol=1e-15)
+
+
+def test_fixed_training_accuracy_matches_final_model_and_fresh_mode_omits_it(
+    config, tmp_path,
+):
+    fixed = replace(config, eval_interval=1)
+    result = train(fixed, output_dir=tmp_path / "fixed", dtype=torch.float64,
+                   checkpoint_dir=tmp_path / "fixed_checkpoints")
+    tokens, labels = make_training_batch(fixed, 1)
+    with torch.no_grad():
+        position, final = state_tracking_accuracy(result.model(tokens), labels)
+    assert all("training_set" in entry for entry in result.eval_history)
+    assert result.eval_history[-1]["training_set"] == {
+        "per_position_accuracy": position.item(),
+        "final_state_accuracy": final.item(),
+    }
+    saved = json.loads(result.results_path.read_text(encoding="utf-8"))
+    assert saved["eval_history"] == result.eval_history
+
+    fresh = replace(config, train_programs=None, eval_interval=1)
+    fresh_result = train(fresh, output_dir=tmp_path / "fresh", dtype=torch.float64,
+                         checkpoint_dir=tmp_path / "fresh_checkpoints")
+    assert all("training_set" not in entry for entry in fresh_result.eval_history)
+
+
+def test_invalid_prediction_rate_uses_only_state_label_positions():
+    parity_logits = torch.zeros((2, 3, 3), dtype=torch.float64)
+    parity_logits[:, 1:, 2] = 1
+    assert train_module.invalid_prediction_rate(parity_logits, "parity") == 1.0
+
+    parity_logits[:, 1:, 2] = 0
+    parity_logits[:, 1, 0] = 1
+    parity_logits[:, 2, 1] = 1
+    parity_logits[:, 0, 2] = 1  # BOS is not a state-label prediction.
+    assert train_module.invalid_prediction_rate(parity_logits, "parity") == 0.0
+
+    parity_logits[0, 2, 1] = 0
+    parity_logits[0, 2, 2] = 2
+    assert train_module.invalid_prediction_rate(parity_logits, "parity") == 0.25
+
+    five_state_logits = torch.zeros((2, 3, 5), dtype=torch.float64)
+    five_state_logits[:, 1:, 4] = 1
+    assert train_module.invalid_prediction_rate(five_state_logits, "five_state") == 0.0
+
+
+@pytest.mark.parametrize("task,outputs,chosen_class,expected", [
+    ("parity", 3, 2, 1.0),
+    ("five_state", 5, 4, 0.0),
+])
+def test_evaluate_reports_invalid_prediction_rate_for_each_length(
+    config, task, outputs, chosen_class, expected,
+):
+    class ConstantPrediction(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.anchor = torch.nn.Parameter(torch.zeros((), dtype=torch.float64))
+
+        def forward(self, tokens):
+            logits = torch.zeros((*tokens.shape, outputs), dtype=torch.float64,
+                                 device=tokens.device)
+            logits[:, 1:, chosen_class] = 1
+            return logits
+
+    lengths = (1, 3)
+    metrics = evaluate(ConstantPrediction(), replace(config, task=task,
+                                                     eval_lengths=lengths))
+    assert set(metrics) == {str(length) for length in lengths}
+    for length in lengths:
+        assert metrics[str(length)]["invalid_prediction_rate"] == expected
+
+
+def _progress_lines(output):
+    return [line for line in output.splitlines() if line.strip()]
+
+
+def test_progress_printing_preserves_training_and_obeys_interval(
+    config, tmp_path, capsys,
+):
+    run_config = replace(config, steps=4, eval_interval=2)
+
+    def run(name, log_every):
+        result = train(run_config, output_dir=tmp_path / name, dtype=torch.float64,
+                       checkpoint_dir=tmp_path / name / "checkpoints",
+                       log_every=log_every)
+        return result, _progress_lines(capsys.readouterr().out)
+
+    baseline, silent_lines = run("silent", None)
+    every_step, step_lines = run("each_step", 1)
+    every_second, alternate_lines = run("alternate", 2)
+    assert silent_lines == []
+    for logged in (every_step, every_second):
+        assert logged.loss_history == baseline.loss_history
+        assert logged.eval_history == baseline.eval_history
+        _assert_same_parameters(_parameters(logged.model), _parameters(baseline.model))
+    assert len(step_lines) == 4
+    assert len(alternate_lines) == 2
+    for lines, steps in ((step_lines, (1, 2, 3, 4)),
+                         (alternate_lines, (2, 4))):
+        for line, step in zip(lines, steps):
+            assert re.search(rf"\bstep\s*(?:=|:)?\s*{step}\b", line, re.I)
+            assert re.search(r"\bloss\b\s*(?:=|:)?\s*[-+\d.eE]+", line, re.I)
+            assert re.search(r"(?:pre.?clip.?grad.?norm|grad.?norm)\s*(?:=|:)?\s*[-+\d.eE]+",
+                             line, re.I)
+            assert re.search(r"(?:\blr\b|learning.?rate)\s*(?:=|:)?\s*[-+\d.eE]+",
+                             line, re.I)
+            assert re.search(r"(?:mean.?gate|\bgate\b)\s*(?:=|:)?\s*[-+\d.eE]+",
+                             line, re.I)
+
+
+def test_cli_forwards_log_every(config, tmp_path, monkeypatch, capsys):
+    source = ast.parse(Path(train_module.__file__).read_text(encoding="utf-8"))
+    main_block = source.body[-1]
+    assert isinstance(main_block, ast.If)
+    calls = []
+    sentinel = object()
+
+    def fake_train(*args, **kwargs):
+        calls.append((args, kwargs))
+        return SimpleNamespace(results_path=tmp_path / "result.json")
+
+    monkeypatch.setattr(sys, "argv", ["train.py", "--config", str(tmp_path / "config.json"),
+                                       "--log-every", "2"])
+    namespace = {
+        "__doc__": train_module.__doc__,
+        "Path": Path,
+        "load_config": lambda path: sentinel,
+        "train": fake_train,
+    }
+    exec(compile(ast.Module(body=main_block.body, type_ignores=[]),
+                 train_module.__file__, "exec"), namespace)
+    assert len(calls) == 1
+    assert calls[0][0] == (sentinel,)
+    assert calls[0][1]["log_every"] == 2
+    assert capsys.readouterr().out.strip() == str(tmp_path / "result.json")
