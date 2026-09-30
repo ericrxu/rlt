@@ -270,6 +270,8 @@ and any change must be recorded here.
 | Memory groups | Only `G = 1` (all decoder layers read group 0) or `G = L_D` (layer ℓ reads group ℓ) are supported |
 | Merge initialization | `W_g`, `W_s`: PyTorch default `Linear` init. `b_g`: zeros (gate starts near 0.5). |
 | Merge variants | Full `W_s` and per-dimension gate only. Scalar gating and low-rank `W_s` are out of scope. |
+| SWA cache storage | Per layer: fixed `W−1` slots, oldest first, plus validity mask and absolute positions. Updates are out-of-place (drop oldest, append newest); never modify tensors in place. `C^D_t` is a list of `L_D` such caches. |
+| Decoder norms | SWA: one shared `RMSNorm_{S,ℓ}` feeding Q, K, V (mirrors encoder). Cross-attention query: `RoPE(W^{M,ℓ}_Q · RMSNorm_{M,ℓ}(b), t)`. FFN: `RMSNorm_{D,ℓ}` per (2.16). |
 
 ## Known ambiguities — ask, don't guess
 
