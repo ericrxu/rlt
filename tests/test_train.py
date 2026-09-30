@@ -114,11 +114,14 @@ def test_model_output_size_and_parameter_count(config, task, outputs):
 def test_training_is_bit_identical_for_same_seed_and_changes_for_new_seed(
     config, tmp_path,
 ):
-    first = train(config, output_dir=tmp_path / "first", dtype=torch.float64)
-    second = train(config, output_dir=tmp_path / "second", dtype=torch.float64)
+    first = train(config, output_dir=tmp_path / "first", dtype=torch.float64,
+                  checkpoint_dir=tmp_path / "first" / "checkpoints")
+    second = train(config, output_dir=tmp_path / "second", dtype=torch.float64,
+                   checkpoint_dir=tmp_path / "second" / "checkpoints")
     different = train(
         replace(config, seed=config.seed + 1),
         output_dir=tmp_path / "different", dtype=torch.float64,
+        checkpoint_dir=tmp_path / "different" / "checkpoints",
     )
     assert first.loss_history == second.loss_history
     _assert_same_parameters(_parameters(first.model), _parameters(second.model))
@@ -135,7 +138,8 @@ def test_fixed_sixteen_programs_can_overfit_in_fifty_steps(config, tmp_path):
         steps=50, learning_rate=0.03, min_learning_rate=0.03,
         warmup_steps=1, eval_interval=50,
     )
-    result = train(overfit, output_dir=tmp_path, dtype=torch.float64)
+    result = train(overfit, output_dir=tmp_path, dtype=torch.float64,
+                   checkpoint_dir=tmp_path / "checkpoints")
     assert len(result.loss_history) == 50
     assert result.loss_history[-1] < result.loss_history[0] / 2
 
@@ -280,7 +284,8 @@ def test_evaluation_does_not_change_parameters(config):
 
 
 def test_results_file_contains_reproducibility_and_accuracy_fields(config, tmp_path):
-    result = train(config, output_dir=tmp_path, dtype=torch.float64)
+    result = train(config, output_dir=tmp_path, dtype=torch.float64,
+                   checkpoint_dir=tmp_path / "checkpoints")
     payload = json.loads(result.results_path.read_text(encoding="utf-8"))
     assert payload["config"] == json.loads(json.dumps(asdict(config)))
     assert isinstance(payload["git_commit"], str) and len(payload["git_commit"]) == 40
