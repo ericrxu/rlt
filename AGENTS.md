@@ -280,6 +280,11 @@ and any change must be recorded here.
 | Initial state `s_⋆` | Learnable, shape `(d,)`, initialized standard normal; never zero, since `RMSNorm_s` has a huge gradient at zero. Shared across the batch. |
 | Model state | Immutable snapshot: encoder cache, memory cache, `s_t`, the `L_D` window caches, and next position. Stepping returns a new state; old states stay reusable. |
 | BOS check | The first token of a fresh state must be BOS; otherwise `ValueError`. |
+| Experiment objective | Per-position state labeling: logits at position `i+1` (after reading operation `i`) predict the state label after operation `i`. Input contains operations only. This departs from (5.1); (5.1) and (5.2) are still implemented and tested. |
+| Output size | `vocab_size = max(input tokens, label classes)`: parity 3, five-state 5. Readout index equals label class. `model.py` is unchanged. |
+| Loss normalization | Mean over each example's targets, then mean over examples, per (5.2). |
+| Activation checkpointing | Deferred. Not needed at this scale; would require editing verified `model.py`. |
+| Training diagnostics | Via PyTorch forward hooks only. No changes to model code. |
 
 ## Known ambiguities — ask, don't guess
 
