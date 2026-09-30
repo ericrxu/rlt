@@ -272,6 +272,10 @@ and any change must be recorded here.
 | Merge variants | Full `W_s` and per-dimension gate only. Scalar gating and low-rank `W_s` are out of scope. |
 | SWA cache storage | Per layer: fixed `W−1` slots, oldest first, plus validity mask and absolute positions. Updates are out-of-place (drop oldest, append newest); never modify tensors in place. `C^D_t` is a list of `L_D` such caches. |
 | Decoder norms | SWA: one shared `RMSNorm_{S,ℓ}` feeding Q, K, V (mirrors encoder). Cross-attention query: `RoPE(W^{M,ℓ}_Q · RMSNorm_{M,ℓ}(b), t)`. FFN: `RMSNorm_{D,ℓ}` per (2.16). |
+| SWA cache contents | Keys stored after RoPE at their own position; values stored unrotated. History is never re-rotated. |
+| Decoder heads | SWA and cross-attention use the same number of heads and head dim. |
+| Decoder scope | `decoder.py` processes one token through all `L_D` layers. The loop over time is in the model (Stage 7). |
+| Tying | `tied = False` only until Stage 12. |
 
 ## Known ambiguities — ask, don't guess
 
