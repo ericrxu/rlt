@@ -6,6 +6,7 @@ This repository implements the Recurrent Looped Transformer (RLT) from:
 
 > Yifan Zhang, *Recurrent Looped Transformer*, technical report, September 12, 2026.
 > Paper: `docs/Recurrent_Looped_Transformer.pdf`
+> Plain-text copy: `docs/paper.txt`. Its equations may be garbled by PDF extraction; where they differ, the equations in this file are authoritative.
 
 **The paper is the specification.** This is a faithful implementation, not an improved one.
 The owner of this repo is learning the architecture by building it. Your job is to implement
