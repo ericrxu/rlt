@@ -285,6 +285,12 @@ and any change must be recorded here.
 | Loss normalization | Mean over each example's targets, then mean over examples, per (5.2). |
 | Activation checkpointing | Deferred. Not needed at this scale; would require editing verified `model.py`. |
 | Training diagnostics | Via PyTorch forward hooks only. No changes to model code. |
+| Config format | JSON in `configs/`, loaded into a dataclass. Every field required; unknown fields raise an error. Configs are committed. |
+| Training data | `train_programs: null` means fresh programs every step; an integer means a fixed set of that size. Eval: 2,048 programs per length at 32, 48, 64, 96, 128, from a seed stream disjoint from training. |
+| Optimizer | AdamW, linear warmup then cosine decay, gradient-norm clipping. Weight decay only on weights with 2+ dimensions; none on norms, biases, or `s_⋆`. |
+| Training dtype | float32 for training runs, float64 in tests. Deterministic algorithms on in both. |
+| Results files | Each run writes `results/<timestamp>_<name>.json`: full config, git commit hash, dirty flag, seed, torch version, parameter count, loss history, eval history, diagnostics. Runs with a dirty flag never go in `RESULTS.md`. |
+| Checkpoints | `checkpoints/`, gitignored, final model only. |
 
 ## Known ambiguities — ask, don't guess
 
