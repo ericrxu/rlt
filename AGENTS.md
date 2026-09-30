@@ -258,7 +258,7 @@ and any change must be recorded here.
 | Encoder block internals | Mirrors the decoder block without cross-attention. Per layer ℓ: `n = RMSNorm_{S,ℓ}(z)`; `q = RoPE(W_Q n, pos)`; `k = RoPE(W_K n, pos)`; `v = W_V n`; `b = z + Attn(q, k, v, causal mask)` (Attn includes `W_O`); `z' = b + FFN(RMSNorm_{F,ℓ}(b))`. No final norm on `e_t`. |
 | Positional scheme | RoPE, applied from explicit absolute position index |
 | FFN activation | GELU, no bias, hidden width `4d` |
-| `α` learned or fixed; initial value | TBD — to be swept |
+| `α` learned or fixed; initial value | Fixed float, required constructor argument, no default. Not a learnable parameter. Swept in Stage 11. |
 | Memory groups `G` | `1` to start |
 | `tied` | `False` to start |
 | Readout `W_o` tied to embeddings | TBD — paper does not specify |
@@ -268,6 +268,8 @@ and any change must be recorded here.
 | Memory normalization | One `RMSNorm_E` shared across groups, feeding both keys and values: `n_t = RMSNorm_E(e_t)`; `k^g_t = RoPE(W^g_K n_t, t)`; `v^g_t = W^g_V n_t` |
 | Memory positions | RoPE on memory keys only, never on values. Cross-attention queries (Stage 6) get RoPE at the decoder's current position `t`. |
 | Memory groups | Only `G = 1` (all decoder layers read group 0) or `G = L_D` (layer ℓ reads group ℓ) are supported |
+| Merge initialization | `W_g`, `W_s`: PyTorch default `Linear` init. `b_g`: zeros (gate starts near 0.5). |
+| Merge variants | Full `W_s` and per-dimension gate only. Scalar gating and low-rank `W_s` are out of scope. |
 
 ## Known ambiguities — ask, don't guess
 
