@@ -174,6 +174,15 @@ def diagnostic_hooks(model: RLTModel):
             handle.remove()
 
 
+def invalid_prediction_rate(logits: torch.Tensor, task: str) -> float:
+    """Fraction of operation positions predicted outside the task's label classes."""
+    if task not in ("parity", "five_state"):
+        raise ValueError("task must be parity or five_state")
+    valid_classes = 2 if task == "parity" else 5
+    predictions = logits[:, 1:, :].argmax(dim=-1)
+    return (predictions >= valid_classes).sum().item() / predictions.numel()
+
+
 def evaluate(model: RLTModel, config: TrainConfig) -> dict[str, dict[str, float]]:
     was_training = model.training
     model.eval()
@@ -185,6 +194,7 @@ def evaluate(model: RLTModel, config: TrainConfig) -> dict[str, dict[str, float]
                 tokens, labels = make_eval_batch(config, length)
                 position_correct = 0.0
                 final_correct = 0.0
+                invalid_count = 0.0
                 for start in range(0, config.eval_programs, config.batch_size):
                     batch_tokens = tokens[start:start + config.batch_size].to(device)
                     batch_labels = labels[start:start + config.batch_size].to(device)
@@ -193,13 +203,32 @@ def evaluate(model: RLTModel, config: TrainConfig) -> dict[str, dict[str, float]
                     size = batch_tokens.shape[0]
                     position_correct += position.item() * size
                     final_correct += final.item() * size
+                    invalid_count += invalid_prediction_rate(logits, config.task) * size
                 results[str(length)] = {
                     "per_position_accuracy": position_correct / config.eval_programs,
                     "final_state_accuracy": final_correct / config.eval_programs,
+                    "invalid_prediction_rate": invalid_count / config.eval_programs,
                 }
     finally:
         model.train(was_training)
     return results
+
+
+def _fixed_training_accuracy(model: RLTModel, config: TrainConfig) -> dict[str, float]:
+    tokens, labels = make_training_batch(config, 1)
+    device = next(model.parameters()).device
+    was_training = model.training
+    model.eval()
+    try:
+        with torch.no_grad():
+            logits = model(tokens.to(device))
+            position, final = state_tracking_accuracy(logits, labels.to(device))
+    finally:
+        model.train(was_training)
+    return {
+        "per_position_accuracy": position.item(),
+        "final_state_accuracy": final.item(),
+    }
 
 
 @dataclass
@@ -231,7 +260,10 @@ def train(
     output_dir: str | Path = "results",
     dtype: torch.dtype = torch.float32,
     checkpoint_dir: str | Path = "checkpoints",
+    log_every: int | None = None,
 ) -> TrainResult:
+    if log_every is not None and log_every < 1:
+        raise ValueError("log_every must be positive")
     commit, dirty = _git_metadata()
     torch.manual_seed(config.seed)
     torch.use_deterministic_algorithms(True)
@@ -255,6 +287,7 @@ def train(
         loss = state_tracking_loss(logits, labels)
         loss.backward()
         grad_norm = clip_gradients(model, config.grad_clip_norm)
+        step_learning_rate = optimizer.param_groups[0]["lr"]
         optimizer.step()
         scheduler.step()
 
@@ -266,7 +299,16 @@ def train(
             "mean_state_norm": torch.stack([norm.mean() for norm in diagnostics.state_norms]).mean().item(),
         })
         if step % config.eval_interval == 0 or step == config.steps:
-            eval_history.append({"step": step, "lengths": evaluate(model, config)})
+            entry = {"step": step, "lengths": evaluate(model, config)}
+            if config.train_programs is not None:
+                entry["training_set"] = _fixed_training_accuracy(model, config)
+            eval_history.append(entry)
+        if log_every is not None and step % log_every == 0:
+            print(
+                f"step={step} loss={loss_history[-1]:.9g} "
+                f"preclip_grad_norm={grad_norm:.9g} lr={step_learning_rate:.9g} "
+                f"mean_gate={diagnostics_history[-1]['mean_gate']:.9g}"
+            )
 
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -295,9 +337,11 @@ if __name__ == "__main__":
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, default=Path("results"))
     parser.add_argument("--checkpoint-dir", type=Path, default=Path("checkpoints"))
+    parser.add_argument("--log-every", type=int, default=None)
     arguments = parser.parse_args()
     outcome = train(
         load_config(arguments.config), output_dir=arguments.output_dir,
         checkpoint_dir=arguments.checkpoint_dir,
+        log_every=arguments.log_every,
     )
     print(outcome.results_path)
