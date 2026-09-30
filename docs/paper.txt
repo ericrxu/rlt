@@ -1,0 +1,768 @@
+Recurrent Looped Transformer
+Yifan Zhang
+yifanzhangresearch@gmail.com
+September 12, 2026
+Abstract
+We propose Recurrent Looped Transformer (RLT), built around three principles: latent rea-
+soning with unbounded temporal depth, model–hardware co-design for efficient execution, and
+model–RL algorithm co-design for consistent policy optimization. A causal encoder constructs
+key–value memory, while a recurrent decoder carries its final hidden state and layerwise sliding-
+window attention (SWA) cache across every prompt and response token. This creates a latent
+computation path with no fixed architectural depth limit as the sequence extends, using a fixed
+number of blocks per token. Hardware co-design separates parallel encoder work from recurrent
+decoder work, enabling batching across sequences, memory reuse, and checkpointed training.
+Algorithm co-design gives pretraining, supervised fine-tuning, rollout sampling, and current-policy
+replay the same state transition, removing prompt-boundary differences from the policy definition.
+Exact replay reconstructs states under current parameters rather than reusing stale rollout states.
+RLT thus provides a concrete basis for hardware-aware recurrent execution and reliable RL scaling.
+Project Page:https://github.com/yifanzhang-pro/recurrent-looped-tranformer
+01 ENCODER
+Parallel causal encoding of observed tokens
+02 ALL-TOKEN RECURRENCE
+Prompt and response use the same transition
+x1 x2 xT···
+Causal encoderE θ
+e1, e2, ..., e T
+Encoder KV memoryM E
+≤T
+Encoder memory is available
+before decoder replay
+eT−1
+prompt
+⊕
+Dϕ
+LD layers
+predictx T
+eT
+last prompt token
+⊕
+Dϕ
+LD layers
+predictx T+1
+eT+1
+response token
+⊕
+Dϕ
+LD layers
+predictx T+2
+HT−2
+HT−1 HT ···
+Read prefix KV; append new-token memory
+Context KV State + SWA KV Merge usess; SWA uses layerwise cached KV.
+Figure 1One recurrent computation across prompt and response.The encoder constructs causal KV
+memory; the decoder processes every token in order. Orange arrows carry the complete decoder state
+Ht = (st,CD
+t ) across the prompt–response boundary without resetting; only itsst component enters the
+merge, while each SWA layer reads its own cached KV. Blue arrows provide prefix-restricted encoder memory,
+extended as new tokens arrive. Earlier prompt transitions are omitted from the drawing.
+1
+
+1 Introduction
+Recurrent Looped Transformer (RLT) is organized around three goals:latent reasoning with infinite
+depth,model–hardware co-design for efficient training and inference, andmodel–RL algorithm co-design
+for consistent training and sampling. We use infinite depth to mean that temporal computation has no
+fixed architectural bound as more tokens are processed. Every finite sequence still executes a finite
+computation.
+A causal encoder constructs context memory, and a deep recurrent decoder merges each token’s
+encoder representation with the previous decoder output. The state evolves over both observed
+prompts and generated responses, without restarting at their boundary. For a 48-layer encoder
+and 48-layer decoder, every token feedsh96
+t−1 into the computation beginning fromh48
+t . Compatible
+weights can be shared between the two stacks, giving two logical passes through one backbone and
+96 logical block evaluations per token.
+Latent reasoning with infinite depth.The recurrent state transmits continuous intermediate
+computation directly between tokens. Aftert processed tokens, a state path traversestLD decoder
+blocks. Its depth is not capped by the number of stored layers: processing further tokens extends
+it. This supports a form of latent reasoning carried across the sequence, while keeping per-token
+block count fixed. The architecture makes that path available; learning useful reasoning along it is a
+separate question.
+Model–hardwareco-design.Encoder-derivedmemorydecouplesparallelfeatureconstructionfrom
+recurrentstateupdates. Theresultingexecutionadmitsbulkencoderkernels, batchingofindependent
+decoder transitions across sequences, reuse of resident weights and KV, and checkpointed backward
+computation. These are the hardware optimization opportunities exposed by the architecture. Full
+prompt recurrence remains part of the model, so hardware efficiency must be pursued without silently
+skipping its sequential work.
+Model–RL algorithm co-design.The same history-dependent transition defines pretraining, su-
+pervised fine-tuning, sampling, and RL replay. Current-policy states are reconstructed from the full
+history under current parameters, while behavior log-probabilities remain tied to the sampler that
+produced the actions. This resolves the structural mismatch caused by different prompt/response
+computations and establishes a consistent policy-evaluation basis for reliable RL scaling. Numerical
+discrepancies, ordinary policy lag, and the quality of the RL objective remain separate concerns.
+Encoder-memory architectures such as YOCO motivate memory reuse (Sun et al., 2024), while
+Feedback Transformer and Recurrent Transformer establish important precedents for temporal
+feedback (Fan et al., 2020; Oncescu et al., 2026). Our focus is the full-decoder recurrence and the
+joint specification of its hardware execution and RL replay semantics. The report develops these
+mechanisms; it does not report measured efficiency or scaling results.
+2 Method
+2.1 Sequence and state
+Letx1:S be an independent sequence withx1 = BOS. For inference,x1:T is the observed prompt
+and later tokens form a continuation. The indexT marks a serving boundary, not a change in the
+conditional model. LetLE,LD be encoder and decoder depths andd the residual width. We use
+2
+
+column vectors. The encoder representation iset∈R d and recurrent output isst∈R d. The complete
+decoder state isHt = (st,CD
+t ), whereCD
+t contains the retained key/value projections at every
+decoder SWA layer. The window sizeW≥1 includes the current token. After each update, the cache
+retains at mostW−1 positions per layer for the next update. All parameters, including the learned
+initial states⋆, are collected inΘ;Eθ andD ϕ denote its encoder and decoder components.
+2.2 Causal encoder and memory
+For an observed prefix, compute
+e1:T =E θ(x1:T ).(2.1)
+Positions within each encoder layer can be processed together using a causal mask. Encoder layers
+remain sequential. For decoder memory groupg∈{1,...,G}, construct
+kg
+t =P g
+K(et,t), v g
+t =W g
+V RMSNormE(et), M g
+≤t ={(k g
+j,vg
+j )}t
+j=1.(2.2)
+The key map includes normalization, projection, and any positional transformation. Decoder layerℓ
+reads groupg(ℓ);G= 1 shares memory across layers andG=L D permits layer-specific projections.
+This global memory depends on encoder representations, not decoder states. The reference decoder
+combines cross-attention to this memory with causal SWA over decoder activations. The two stores
+have distinct roles:M≤t supplies global encoder context, whileCD
+t supplies a bounded window of
+decoder-derived KV.
+2.3 One transition for every token
+Initialize once, before BOS:
+H0 = (s⋆,∅).(2.3)
+For every observed or sampled token, apply
+ut = Merge(et,st−1),(2.4)
+Ht = (st,CD
+t ) =D ϕ(ut;M ≤t,CD
+t−1,t), t≥1,(2.5)
+pΘ(xt+1|x 1:t) = softmax
+(︁
+Wo RMSNormo(st)
+)︁
+xt+1
+.(2.6)
+DefineFt(H) =D ϕ(Merge(et,s);M ≤t,CD,t) forH= (s,C D). For a fixed token sequence, encoder
+features have no direct dependency on decoder states. Nevertheless, the complete state used to
+predict the first response token includes every prompt transition:
+HT =F T◦FT−1◦···◦F 1(H0).(2.7)
+Generation continues fromHT. After samplingxT+1 fromsT, encode it incrementally, append its
+encoder-derived KV, and computeHT+1 =F T+1 (HT ), including every decoder SWA cache update.
+Neither component ofHT is reset at the serving boundary.
+3
+
+2.4 Prompt prefill and incremental decoding
+Prefill first computes the causal encoder representations and memory of the prompt, then evaluates
+H1,...,H T in order. At decoder positiont, attention is restricted toM≤t even though the entire
+prompt memory is available. Generation uses
+(et,CE
+t ) =E step
+θ (xt,CE
+t−1)(2.8)
+with encoder cacheCE, followed by memory append and the same decoder transition. Observed
+tokens can be encoded in chunks, provided the causal encoder cache is preserved and every token still
+receives its decoder update. Parallel encoder processing and recurrent encoder stepping are execution
+schedules for the same causal computation; there is no corresponding ordinary fully parallel schedule
+assumed for the nonlinear decoder recurrence. In particular, historical decoder KV must be produced
+by the preceding recurrent updates; a standard parallel SWA decoder pass is not generally equivalent.
+2.5 Merge and decoder blocks
+A concrete gated merge is
+rt−1 = RMSNorms(st−1),(2.9)
+gt =σ
+(︁
+Wg[et;rt−1] +bg
+)︁
+,(2.10)
+ut =e t +αg t⊙Wsrt−1.(2.11)
+HereWg∈R d×2d,Ws∈R d×d, andα controls the feedback scale. A modest nonzero initial feedback
+scale is a candidate initialization, not an established stability prescription. Scalar gating or a low-rank
+Ws reduces overhead.
+Forz0
+t =u t, a concrete decoder block first performs causal SWA, then encoder-memory cross-
+attention, then an FFN:
+qD,ℓ
+t =P D,ℓ
+Q (zℓ−1
+t ,t),(2.12)
+kD,ℓ
+t =P D,ℓ
+K (zℓ−1
+t ,t), v D,ℓ
+t =W D,ℓ
+V RMSNormS,ℓ(zℓ−1
+t ),(2.13)
+bℓ
+t =z ℓ−1
+t + AttnD
+ℓ
+(︂
+qD,ℓ
+t ,{(kD,ℓ
+j ,vD,ℓ
+j )}t
+j=max(1,t−W+1)
+)︂
+,(2.14)
+aℓ
+t =b ℓ
+t + AttnM
+ℓ
+(︂
+PM,ℓ
+Q (bℓ
+t,t),M g(ℓ)
+≤t
+)︂
+,(2.15)
+zℓ
+t =a ℓ
+t + FFNℓ(RMSNormD,ℓ(aℓ
+t)), s t =z LD
+t .(2.16)
+The attention operators include their output projections; query/key maps include their respective
+normalizations and positional transformations. At each layer, current KV is formed before SWA, using
+the layer input, so current-position attention introduces no circular dependency. Historical decoder
+KV comes fromCD
+t−1. After the update, retain positionsmax(1,t−W+ 2),...,t inCD
+t ; this set is
+empty forW= 1 . Position metadata follows the same convention during prefill, sampling, and replay.
+Alternative sublayer orders define different variants and must be used consistently in all execution
+modes.
+4
+
+2.6 What is looped: a concrete tied configuration
+The reference tied RLT setsLE =L D =L . Encoder self-attention at layerℓ and decoder SWA
+at layerℓ share compatible query, key, value, and output projection matrices; their FFNs are also
+shared. The encoder uses its causal context, whereas decoder SWA uses decoder activations within its
+window. Decoder cross-attention has separate query/output projections and the memory projections
+of Equation(2.2). Stage-specific normalizations, the merge, and readout remain explicit modules.
+Thus a decoder block adds cross-attention to the reused attention/FFN core; two logical passes do
+not imply equal per-block FLOPs.
+This is parameter reuse with different attention wiring, not activation copying. No decoder output
+is identified with an encoder output. An untiedEθ,Dϕ preserves the complete-state recurrence while
+removing depth-wise parameter reuse. Encoder-memory group sharing is an independent axis and
+does not merge or eliminate the layerwise decoder SWA caches.
+3 Computational Properties
+3.1 Prompt–response consistency
+Proposition 3.1(Invariance to the serving split).Fix the parameters, token sequence, position
+convention, and independent-sequence start state. Assume mathematically equivalent causal en-
+coder execution, identical SWA windows and cache updates, and deterministic decoder operations.
+Processing any prefix by batched encoder prefill followed by recurrent decoder updates produces
+the same states and next-token distributions as processing that prefix incrementally. Moving the
+prompt–response split does not change the conditional distribution for a fixed token history.
+Proof. Causal encoder equivalence gives the sameet andM≤t in both schedules. Both initialize with
+H0 = (s⋆,∅). If their states agree att−1 , Equation(2.5) applies identical operations to identical
+inputs att, so their states agree att. Induction establishes the result. The serving split never appears
+in the transition.
+This is mathematical equivalence. Different kernels and precision choices can still cause numerical
+discrepancies. It also assumes identical tokenization and context, with no dropped tokens, reset, or
+stale state inserted in one execution.
+3.2 Prefill work and sequential depth
+Let Cpf
+E (T) be encoder prefill work,CM(T) the memory projection work, andCstep
+D (t) a decoder
+evaluation overt encoder-memory entries and at mostW decoder positions per layer, including
+merge overhead. Then
+Cprefill(T) =C pf
+E (T) +C M(T) +
+T∑︂
+t=1
+Cstep
+D (t).(3.1)
+For dense attention and width-proportional KV, a coarse arithmetic estimate is
+O
+(︁
+(LE +LD)(Td 2 +T 2d) +GTd 2 +LDTmin(W,T)d
+)︁
+.(3.2)
+5
+
+There is a sequential decoder path throughT transitions, each containingLD blocks. Encoder
+parallelism thereforedoes not imply fully parallel model prefill. State recurrencecan reduce hardware
+utilization even when arithmetic order matches a conventional dense Transformer. We accept this
+cost to preserve full prompt computation; no reduced-prefill speedup is claimed.
+Each new token evaluatesLE +LD blocks, plus merge and memory projection. Attention work
+still grows with context length. With effective KV widthdKV, inference cache storage is approximately
+O
+(︁
+(LE +G)td KV +LD min(t,W−1)d D
+KV +d
+)︁
+.(3.3)
+HeredD
+KV is the effective decoder SWA KV width; theO(d) term is the current recurrent output.
+The SWA term counts retained history, excluding the transient current KV. Training activations are
+additional. Parameter tying reduces stored weights but does not eliminate the second logical pass or
+either cache role.
+3.3 Latent reasoning with infinite temporal depth
+The available state path to positiont composest decoder transitions, traversingtLD decoder blocks
+from the sequence start. For a prompt of lengthT followed byn processed continuation tokens, the
+corresponding path contains(T+n)L D decoder blocks. Figure 2 illustrates these analytical counts.
+This depth includes the prompt and grows with the processed history while per-token block count
+stays fixed. Gates, contraction, and learned projections may suppress the practical contribution of
+long paths; structural depth alone is not a reasoning guarantee.
+01 CONSTANT WORK PER TOKEN, EXTENSIBLE STATE PATH
+Illustrative 48-layer encoder + 48-layer decoder; counts exclude merge and readout.
+Processed tokenst
+Logical block count
+1 2 3 4 5 6 7 80
+96
+192
+288
+384
+State path: 48t
+Decoder blocks along the
+recurrent chain from s0
+Per token: 48 + 48 = 96
+Fixed block count; attention
+work still grows with context
+Analytical counts, not measured performance. No fixed depth bound as the sequence extends.
+Figure 2Unbounded temporal depth with fixed per-token block count.ForLE =L D = 48, the recurrent
+path traverses48t decoder blocks aftert processed tokens, while each token executes 96 encoder-plus-decoder
+blocks. The path count excludes encoder blocks and measures structural depth, not effective reasoning quality
+or wall-clock cost.
+6
+
+4 Model–Hardware Co-design
+4.1 Parallel work around a recurrent core
+For a known training sequence or prompt, encoder features and memory projections can be computed
+with token-parallel kernels. Decoder evaluation then follows the state dependencies. As illustrated in
+Figure 3, across independent sequences, ready decoder transitions can be batched: each sequence
+contributes its next state update while maintaining its own encoder KV prefix, decoder SWA cache,
+recurrent output, and position. This exposes batch-level parallelism without asserting sequence-level
+parallelism within the recurrent decoder.
+During inference, the encoder step, memory append, merge, decoder blocks, and readout form
+a repeated execution schedule. Scheduling independent requests together can increase matrix-
+operation sizes and weight reuse. Small batches or uneven sequence lengths may limit utilization.
+No exact parallel scan for the general nonlinear decoder is assumed.
+02 BATCH ACROSS SEQUENCES, PRESERVE RECURRENCE WITHIN EACH
+Causal encoder
+Known-token
+parallelism
+Build per-sequence
+prefix KV memory
+Batch 1 Batch 2 Batch 3 Batch 4
+Seq. A Dϕ Dϕ Dϕ Dϕ
+Seq. B Dϕ Dϕ Dϕ Dϕ
+Seq. C Dϕ Dϕ Dϕ Dϕ
+Each update reads its encoder prefix and decoder SWA window
+Columns: independent updates can share one batched kernel.
+Rows: ordered state dependencies. Schematic schedule; no latency or throughput claim.
+Figure 3Hardware parallelism around a sequential core.Independent sequences contribute ready decoder
+updates to a batch. Each row preserves complete-state order and reads its own encoder KV prefix and decoder
+SWA window. Known tokens can be encoded in parallel before replay; generated tokens require incremental
+encoding. Memory reuse, batching, and kernel fusion are implementation targets, not measured speedups.
+4.2 Memory traffic and parameter reuse
+Encoder-derived KV is immutable for a fixed token prefix and parameter set. Decoder layers read
+this memory and separately append decoder-derived KV to their bounded layerwise SWA caches.
+These caches cannot be replaced by encoder memory. Sharing memory groups reduces stored KV
+and projections, while choosing more groups preserves layer-specific memory transformations. Tying
+compatible encoder/decoder weights reduces the stored parameter footprint and can favor weight
+residency, but does not by itself reduce block evaluations or guarantee lower latency.
+Normalization, gating, state projection, and residual addition are candidates for fused execution
+where dependencies and numerical semantics permit. Cross-attention should read only valid encoder-
+prefix memory, and SWA only its valid local window; a faster kernel that reads future entries changes
+7
+
+themodel. Theseareimplementationtargets, notclaimsofcompletedkernelsormeasuredbandwidth
+savings.
+4.3 Training memory and execution fidelity
+Activation checkpointing trades recomputation for activation storage while retaining full BPTT.
+Encoder batching, decoder batching across examples, and checkpoint placement should be chosen
+jointly with sequence lengths and accelerator memory. The optimization target is useful training and
+inference throughput under the reference recurrent computation, rather than eliminating recurrence
+by approximation.
+Zhang et al. (2026) frame the executed policy as a function of both weights and execution
+choices, including precision, cache construction, reductions, and sampling transforms. Hardware
+and algorithm choices meet at replay fidelity: kernel precision, stochastic operations, positional
+conventions, and cache lifetimes must be consistent with the policy being evaluated. Full prompt
+recurrence incurs a real cost. Co-design aims to execute that computation efficiently; hardware-
+efficient training and inference remain engineering goals until measured.
+5 Training Objectives
+5.1 Autoregressive pretraining
+Full-sequence next-token prediction is the base objective:
+LPT(Θ) =−E x1:S
+[︄
+1
+S−1
+S−1∑︂
+t=1
+logp Θ(xt+1|x 1:t)
+]︄
+.(5.1)
+InitializeH0 = (s⋆,∅), compute causal encoder features, and unroll the complete decoder state over
+positions 1,...,S−1 . Every non-BOS target is supervised. Encoder, memory projections, merge, and
+decoder train jointly. Independent documents reset recurrent outputs, decoder SWA caches, encoder
+caches, and positions, and use disjoint attention masks. Full documents or segments with a declared
+initial-context convention must be used; a segment cut cannot silently discard state while claiming
+full-history likelihood.
+5.2 Supervised fine-tuning
+Letmt+1 = 1 for assistant targets and0 for user, system, tool, or padding targets. For examples with
+at least one selected target, optimize
+LSFT(Θ) =−E x
+⎡
+⎢⎢⎣
+1∑︁S−1
+t=1 mt+1
+∑︂
+1≤t<S
+mt+1=1
+logp Θ(xt+1|x 1:t)
+⎤
+⎥⎥⎦.(5.2)
+Loss masking does not mask state updates or detach encoder memory, recurrent outputs, or decoder
+KV. The decoder processes all preceding context tokens, including user and tool messages. Gradients
+from assistant losses can flow through those prompt computations. The state is not reset at an
+assistant boundary, and no separate boundary-adaptation objective is needed to repair a prompt-
+specific transition change.
+8
+
+5.3 Model–RL algorithm co-design
+Letc=x 1:T be a prompt andy= (y1,...,y N)a sampled response, withyi =x T+i. The policy is
+πΘ(y|c) =
+N∏︂
+i=1
+pΘ(yi|c,y <i).(5.3)
+For a sequence rewardR(c,y) independent of Θ, defineJ(Θ) =E c,y∼π Θ[R(c,y)]. Its on-policy
+score-function gradient is
+∇ΘJ=E c,y∼π Θ
+[︄
+(R(c,y)−b(c))
+N∑︂
+i=1
+∇Θ logp Θ(yi|c,y <i)
+]︄
+,(5.4)
+whereb(c) is a response-independent baseline, treated as constant in the policy gradient. Discrete
+sampled tokens are held fixed during log-probability replay, while differentiation includes their
+continuous recurrent computations. No particular reward function, clipping rule, or KL regularizer is
+required by the architecture.
+Figure 4 summarizes the replay contract. The sampler records each action’s behavior log-
+probability under its actual sampling distributionµ. For a trainer update at parametersΘ, recompute
+causal encoder features with those parameters and reconstruct both the recurrent output and every
+decoder SWA cache overthe full prompt and sampled response prefix, starting from the same sequence
+initialization. This yields current-policy log-probabilities and the token ratios
+ri(Θ) = exp (logpΘ(yi|c,y <i)−logµ(y i|c,y <i)).(5.5)
+At identical parameters and sampling conventions, trainer and sampler represent the same com-
+putation. A raw model distribution must not be conflated with a temperature-scaled or truncated
+sampling distribution. Exact importance sampling requirespΘ(·|h)≪µ(·|h) at relevant histories.
+Top-k or top-p behavior sampling generally violates this condition for an untruncated softmax target.
+Behavior log-probabilities must include temperature, truncation, and renormalization; metadata
+alone cannot restore missing support. Here the target is the raw model policypΘ. A transformed
+target requires replacing the target probabilities consistently throughout the objective and ratios.
+Following the execution-level distinction of Zhang et al. (2026), matching forward probabilities
+at one parameter value is not sufficient to establish matching policy gradients: the trainer must
+differentiate the recurrent target computation or a forward-and-backward equivalent implementation.
+RLT therefore specifies both full-history forward replay and its gradient path. A shared architectural
+transition alone does not prove numerical kernel parity.
+Correct log-probabilities do not make an arbitrary off-policy loss unbiased. For fixed prompts
+and sequence rewards, exact trajectory importance sampling uses∏︁
+iri, subject to support and
+integrability. Tokenwise clipping or other surrogate objectives introduce their own algorithmic
+choices. Architecture-induced state mismatch and ordinary policy lag are distinct issues.
+5.4 Gradients, checkpointing, and state staleness
+Teacher forcing allows a parallel causal encoder pass over known tokens. Decoder replay remains
+sequential across the complete history. Full BPTT differentiates through encoder memory, recurrent
+outputs, and decoder SWA KV across prompt and response, even when losses are applied only to
+9
+
+03 SAME TRANSITION, PARAMETER-CORRECT POLICY REPLAY
+SAMPLERbehavior policy µ TRAINERcurrent parameters Θ
+Recur over full prompt; sample response
+Record tokens y and logµ(yi |c,y <i)
+Rebuild encoder KV, st,
+and decoder SWA KV
+Replay full prompt + fixed response tokens
+c, y
+Keep recorded behavior log-probabilities
+as the ratio denominator
+Compute current logp Θ(yi |c,y <i)
+Full BPTT; checkpoint as needed
+ri(Θ) = exp[logp Θ(yi|c,y <i)−logµ(y i|c,y <i)]
+After every parameter update: rebuild current-policy KV and states; retain original behavior log-probabilities.
+Figure 4Policy replay that respects recurrent state.The sampler retains behavior probabilities; the trainer
+reconstructs the full prefix under current parameters. Old recurrent outputs or decoder SWA KV are not
+substituted for current-policy states. Identical parameters and execution conventions give the same conditional
+policy; off-policy estimation and numerical differences remain separate concerns.
+response tokens. Running prompt recurrence underno_grad preserves the forward probabilities if
+the state is recomputed at current parameters, but omits prompt-state derivatives and is a gradient
+approximation.
+The reference training computation uses full BPTT with activation checkpointing as needed.
+Checkpointing recomputes forward operations during backward with the same parameters and
+stochastic state; it changes memory and compute costs without intentionally truncating gradients.
+Truncated BPTT is an optional approximation: preserve numeric values but detach explicitly selected
+boundary tensors. Detaching onlyst leaves gradient paths through decoder KV and encoder memory;
+the truncation specification must identify all retained and detached paths. It can preserve current-
+policy forward probabilities while shortening the gradient horizon.
+Within one replay, keep parameters fixed. After an optimizer update, previously computed
+encoder KV, recurrent outputs, and decoder SWA KV generally cease to be current-policy values.
+Recompute them from the sequence start, or from an exact prefix checkpoint produced under the
+same parameters and execution convention. This applies to every repeated optimization pass over a
+rollout. A sampler’s old hidden states cannot replace current-policy replay. Conversely, its recorded
+behavior log-probabilities remain the denominators for the policy that actually sampled the actions.
+6 Multi-turn Serving and Cache Semantics
+A conversation is serialized into a token history beginning at BOS. New user messages, tool results,
+role delimiters, and assistant tokens all receive encoder and decoder updates. At a tool return, encode
+the newly observed span using the cached encoder prefix, then advance the decoder through every
+new token from its existing state. Resume generation without resetting. The reference policy resets
+only at a new independent sequence or an explicitly defined context reset.
+10
+
+An exact prefix snapshot contains encoder cacheCE
+t , encoder-derived cross-attention memory
+M≤t, complete decoder stateHt = (st,CD
+t ), token and position metadata, the SWA window conven-
+tion, and the model version. A compatible fixed-weight snapshot can be reused for inference because
+the state is independent of where the serving split was placed. Reproducing sampled outputs also
+requires the sampler’s random state. Text-only restoration requires replay to rebuild hidden state;
+weight updates invalidate old-state reuse for exact current-policy computation.
+Deleting, editing, or truncating a prefix changes the conditioning history. Recompute from a valid
+earlier checkpoint rather than retaining a state that includes removed content. Similarly, appending
+a template that rewrites earlier tokens is not an append-only cache operation. In multi-turn RL,
+externally supplied tokens update the complete state but are not sampled policy actions and do not
+receive action importance-ratio factors. Their state updates remain differentiable for full BPTT.
+7 Related Work
+Encoder-derived memory.YOCO builds reusable KV memory for an upper cross-decoder and
+enables prefill early exit (Sun et al., 2024). DeepSeek-V4.1-Flash projects decoder global KV from
+final encoder states and separately handles decoder SWA (DeepSeek-AI, 2026). RLT retains encoder-
+derived memory but processes every prompt token through its recurrent decoder. It therefore does
+not inherit prompt-wide decoder skipping from those designs.
+Temporal feedback.Feedback Transformer exposes processed past representations to future com-
+putation (Fan et al., 2020). Recurrent Transformer forms each layer’s persistent KV from that layer’s
+output, with an exact tiling schedule that improves memory movement (Oncescu et al., 2026). RLT
+instead feeds the previousfinal decoder outputinto the next decoder input; its global attention
+memory is encoder-derived, while local SWA KV is decoder-derived. Both prompt and response now
+carry recurrence. The distinction lies in the feedback location and memory representation, not a
+claim of fully parallel RLT prefill. The layerwise RT tiling result is not automatically a kernel for this
+full-decoder recurrence.
+Depth-wise reuse.Universal Transformers share computation across depth (Dehghani et al., 2018),
+and recurrent-depth latent reasoning iterates a recurrent block to scale computation (Geiping et al.,
+2025). RLT’s state advances across tokens, while its tied configuration additionally shares compatible
+encoder and decoder weights. Neither weight tying nor temporal recurrence alone establishes novelty
+or a quality improvement.
+8 Conclusion
+RLT combines three design principles: latent reasoning with unbounded temporal depth, model–
+hardware co-design, and model–RL algorithm co-design. A continuous decoder state extends compu-
+tation across every prompt and response token, with a fixed number of blocks per token. Encoder-
+memory separation exposes parallel work, memory reuse, and checkpointing opportunities around
+the recurrent core. A shared transition and exact current-policy replay eliminate structural prompt-
+boundary mismatch between trainer and sampler, providing a foundation for reliable RL scaling. The
+computational definitions are explicit; realized reasoning quality, hardware efficiency, and scaling
+behavior require future validation.
+11
+
+References
+DeepSeek-AI. DeepSeek-V4.1-Flash: Pushing the limits of KV cache compression. Technical re-
+port, DeepSeek-AI, 2026. URLhttps://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash/
+resolve/main/DeepSeek_V41_Tech_Report.pdf. Sections 2.2 and 3.2.2; publicly available from
+the official DeepSeek model repository.
+Mostafa Dehghani, Stephan Gouws, Oriol Vinyals, Jakob Uszkoreit, and Łukasz Kaiser. Universal
+transformers.arXiv preprint arXiv:1807.03819, 2018. URLhttps://arxiv.org/abs/1807.03819.
+Angela Fan, Thibaut Lavril, Edouard Grave, Armand Joulin, and Sainbayar Sukhbaatar. Addressing
+some limitations of transformers with feedback memory.arXiv preprint arXiv:2002.09402, 2020.
+URLhttps://arxiv.org/abs/2002.09402.
+Jonas Geiping, Sean McLeish, Neel Jain, John Kirchenbauer, Siddharth Singh, Brian R. Bartoldson,
+Bhavya Kailkhura, Abhinav Bhatele, and Tom Goldstein. Scaling up test-time compute with
+latent reasoning: A recurrent depth approach.arXiv preprint arXiv:2502.05171, 2025. URL
+https://arxiv.org/abs/2502.05171.
+Costin-Andrei Oncescu, Depen Morwani, Samy Jelassi, Alexandru Meterez, Mujin Kwun, and Sham
+Kakade. The recurrent transformer: Greater effective depth and efficient decoding.arXiv preprint
+arXiv:2604.21215, 2026. URLhttps://arxiv.org/abs/2604.21215.
+Yutao Sun, Li Dong, Yi Zhu, Shaohan Huang, Wenhui Wang, Shuming Ma, Quanlu Zhang, Jianyong
+Wang, and Furu Wei. You only cache once: Decoder-decoder architectures for language models.
+arXiv preprint arXiv:2405.05254, 2024. URLhttps://arxiv.org/abs/2405.05254.
+Yifan Zhang et al. Reliable RL scaling requires accounting for Prefill–Decode ker-
+nel mismatch. Technical report, Pretraining-RL-Science project, August 2026. URL
+https://github.com/yifanzhang-pro/Pretraining-RL-Science/blob/master/Prefill_
+Decode_Kernel_Mismatch.pdf. Dated August 6, 2026; revised August 24, 2026.
+12
+
+Appendix
+A Reference Execution Schedules 13
+A.1 Recurrent prompt prefill . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 13
+A.2 Generation and new external inputs . . . . . . . . . . . . . . . . . . . . . . . . . . . . 13
+A.3 Pretraining and SFT . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 14
+A.4 Current-policy RL replay . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 14
+B Causality and Gradient Paths 15
+C Exactness of Cached States 16
+A Reference Execution Schedules
+The complete decoder state isHt = (st,CD
+t ), withH0 = (s⋆,∅). Encoder continuation state and
+encoder-derived cross-attention memory are maintained separately. All schedules use the block order
+and window convention in Equation (2.16).
+A.1 Recurrent prompt prefill
+1. Start an independent sequence withx1 = BOS andH0 = (s⋆,∅); initialize encoder caches and
+positions.
+2. Encodex 1:T causally in parallel and construct its encoder KV memory.
+3. Fort= 1,...,T , computeHt =D ϕ(Merge(et,st−1);M ≤t,CD
+t−1,t). Each decoder layer reads only
+its permitted historical SWA entries and current KV. Never expose future encoder or decoder KV
+to an earlier query.
+4. Predict the first response token fromsT. PreserveHT, encoder caches, memory, and positional
+metadata for the next update.
+Historical decoder KV is produced by the preceding recurrent updates. Parallel causal encoder prefill
+does not make an ordinary parallel SWA decoder pass equivalent to this recurrence.
+A.2 Generation and new external inputs
+Samplext+1 from the distribution predicted byst, then consume it by updating the encoder cache
+and memory and advancing the complete decoder state toHt+1. The resulting state predictsxt+2.
+Every consumed token receives exactly one recurrent update and one KV insertion at every decoder
+SWA layer.
+When a user or tool supplies multiple tokens, their encoder representations can be computed in
+a causal batch conditioned on the existing prefix. Decoder updates still occur in token order from the
+saved complete state. External tokens update bothst andC D
+t .
+A length-limited generation may defer consuming its final emitted token. The cache API must then
+record that pending token separately and consume it before any later token. The caches represent
+the consumed prefix, excluding the pending token. This prevents double or skipped updates on
+resume.
+13
+
+A.3 Pretraining and SFT
+1. Computee 1:S−1 using a causal encoder and construct memory.
+2. InitializeH0 = (s⋆,∅); unroll all positions1,...,S−1 , including every layerwise SWA cache
+update.
+3. Accumulate all valid next-token losses for pretraining, or only assistant-target losses for SFT. All
+context tokens receive state updates.
+4. Normalize each example by its number of selected targets, then average examples as in Equa-
+tions (5.1) and (5.2). Backpropagate through the complete computation, using checkpointing if
+required.
+Examples without selected targets are excluded from the loss average. An alternative token-weighted
+batch normalization defines a different weighting of examples and should be stated explicitly.
+Packed independent sequences use separate recurrent states, decoder SWA caches, encoder
+caches, positions, and attention masks. Neither attention mechanism may cross a document boundary.
+A loss mask never substitutes for an attention mask or a complete document-state reset. Training
+cache operations must preserve autograd dependencies or support equivalent recomputation.
+A.4 Current-policy RL replay
+1. Read the rollout token history, action mask, actual behavior log-probabilities, and sampling
+metadata. Behavior probabilities include all sampling transforms and renormalization.
+2. Hold current parameter values fixed throughout forward replay and backward. Use the target
+policy’s positional, SWA, and execution conventions without disabling parameter gradients.
+3. Recomputeencoderrepresentationsoftheknownhistory. From H0 = (s⋆,∅), rebuildtherecurrent
+output and every decoder SWA cache through all prompt tokens.
+4. Replay subsequent tokens in order. Before consuming each sampled action, read its current-policy
+log-probability from the preceding state. Include EOS if sampled. Consume every intervening
+external token needed for later predictions.
+5. Form the chosen RL loss from action log-probabilities, rewards or advantages, and any required
+behavior ratios. Do not assign policy-action factors to external user/tool tokens.
+6. Backpropagate, update parameters, and invalidate parameter-dependent encoder and decoder
+caches before the next exact current-policy replay.
+The action mask selects policy-loss terms only; it must not disable gradient tracking through external-
+token updates. All assistant turns are replayed with their intervening external context. Prompt
+replay under no_grad, or detaching prompt KV, can preserve forward values but is not the reference
+full-BPTT calculation.
+Exact importance-sampling claims require support coverage at relevant histories. Recording the
+probability of a sampled action does not repair missing support for unsampled actions. The use of
+tokenwise or trajectory-level weighting is an RL-algorithm choice, not a consequence of the replay
+schedule.
+A deterministic policy forward, such as one with dropout disabled, avoids ambiguity from internal
+stochastic computation. Otherwise the policy must specify how such randomness is conditioned on
+14
+
+or marginalized; a single arbitrary stochastic replay is not generally the marginal action probability.
+Matching schedules alone does not establish numerical equality across kernels or precision settings.
+B Causality and Gradient Paths
+Proposition B.1(Causality).With a causal encoder, prefix-restricted encoder memory, and causal de-
+coder SWA,Ht = (st,CD
+t )depends only onx1:t and the parameters, includings⋆, under deterministic
+execution.
+Proof. Encoder causality implies that eachej depends only onx1:j, henceM≤t depends only on
+x1:t. The initial state contains no future-token information. SupposeHt−1 depends only onx1:t−1.
+The next update uses this state,et, andM≤t. At each decoder layer, current KV is formed from the
+causally available layer input, and SWA reads no position greater thant. Appending current KV
+and evicting old entries introduce no future information. Thus bothst andCD
+t depend only onx1:t,
+completing the induction.
+For teacher-forced encoder features held fixed, use a fixed-slot representation of the decoder
+cache, with validity masks during warm-up, and define
+Jt = ∂Ht
+∂Ht−1
+.(B.1)
+Then ∂Ht
+∂Hj
+=J tJt−1···J j+1, j <t,(B.2)
+where
+Jt =
+⎛
+⎜⎜⎝
+∂st
+∂st−1
+∂st
+∂CD
+t−1
+∂CD
+t
+∂st−1
+∂CD
+t
+∂CD
+t−1
+⎞
+⎟⎟⎠.(B.3)
+A product involving only∂st/∂st−1 generally misses paths through decoder KV. Normalization alone
+does not bound products of these Jacobians.
+Encoder memory provides access to past encoder information. Decoder SWA additionally exposes
+cached projections of recent decoder activations. Neither is an unrestricted archive of all previous
+decoder states. Evicted entries can still influence later computation through states or retained
+activations that previously consumed them.
+Full parameter derivatives also include the parameter dependence of encoder features, memory,
+everytransition, anddecoderKVprojections. Let BE
+T denoteallencoder-sideboundarytensorsneeded
+for response continuation, including encoder continuation KV and encoder-derived cross-attention
+memory. For a response lossℓ(Θ,HT (Θ),BE
+T (Θ)), the chain rule gives
+dℓ
+dΘ = ∂ℓ
+∂Θ + ∂ℓ
+∂HT
+∂HT
+∂Θ + ∂ℓ
+∂BE
+T
+∂BE
+T
+∂Θ .(B.4)
+The first term holds the boundary arguments fixed; the other terms account for their prefix computa-
+tion. In particular,
+∂ℓ
+∂HT
+∂HT
+∂Θ = ∂ℓ
+∂sT
+∂sT
+∂Θ + ∂ℓ
+∂CD
+T
+∂CD
+T
+∂Θ .(B.5)
+15
+
+DetachingsT, decoder KV, or encoder-side boundary tensors removes corresponding gradient paths
+even if forward probabilities are unchanged. None of these operations is full BPTT.
+C Exactness of Cached States
+A cached prefix can replace forward replay for probability evaluation only when the complete cache
+matches the current parameters, consumed token prefix, positions, initialization, window semantics,
+and policy execution settings. It includes recurrent output, every decoder SWA cache, encoder
+continuation state, encoder-derived memory, and required metadata. Stochastic computation must
+be treated according to the policy definition.
+A detached cache does not supply the derivative graph required for full-gradient training. The
+prefix graph must be retained or recomputed so gradients reach all parameter-dependent boundary
+tensors. A cache built under older weights generally satisfies neither the current-policy value nor the
+full-gradient requirement.
+Activation checkpointing within one update recomputes activations under the same parameters
+and stochastic state. Mutable cache implementations must restore checkpointed contents during
+recomputation and must not overwrite activations still required by backward.
+Truncated BPTT instead preserves numeric values while cutting selected gradient dependencies.
+A complete decoder-state detach is
+˜︁Ht = (stopgrad(st),stopgrad(CD
+t )).(C.1)
+Detaching onlyst leaves possible paths through decoder KV; detaching only decoder KV leaves paths
+through the recurrent output. Encoder-side boundary tensors can provide additional paths across
+the same boundary. Any truncation scheme must state which tensors are detached.
+SWA eviction limits future direct access to old KV; it is not itself a stop-gradient operation. Full
+BPTT still differentiates computations that consumed those entries before eviction. The inference
+cache size therefore does not bound full-BPTT activation storage.
+Processing later chunks after changing weights while retaining earlier states or KV is a separate
+stale-state approximation. These distinctions apply equally to pretraining, SFT, and RL.
+16
