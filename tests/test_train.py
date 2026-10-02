@@ -50,7 +50,7 @@ def deterministic_float64():
 @pytest.fixture
 def config():
     return TrainConfig(
-        name="parity_test", task="parity", seed=17, eval_seed=701,
+        name="parity_test", task="parity", model_type="rlt", seed=17, eval_seed=701,
         dim=4, num_encoder_layers=1, num_decoder_layers=1,
         num_heads=1, head_dim=4, window_size=2, alpha=0.75,
         rms_eps=1e-6, train_length=2, batch_size=16, train_programs=16,

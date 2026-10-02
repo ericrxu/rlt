@@ -1,0 +1,33 @@
+{
+    "name":  "parity_rlt",
+    "task":  "parity",
+    "model_type":  "rlt",
+    "seed":  0,
+    "eval_seed":  1000,
+    "dim":  32,
+    "num_encoder_layers":  2,
+    "num_decoder_layers":  2,
+    "num_heads":  2,
+    "head_dim":  16,
+    "window_size":  3,
+    "alpha":  0.5,
+    "rms_eps":  1E-06,
+    "train_length":  32,
+    "batch_size":  100,
+    "train_programs":  null,
+    "steps":  2000,
+    "learning_rate":  0.003,
+    "min_learning_rate":  0.0003,
+    "warmup_steps":  100,
+    "weight_decay":  0.01,
+    "grad_clip_norm":  1.0,
+    "eval_lengths":  [
+                         32,
+                         48,
+                         64,
+                         96,
+                         128
+                     ],
+    "eval_programs":  2048,
+    "eval_interval":  500
+}
