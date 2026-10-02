@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 import torch
 
+import train as train_module
 from train import build_model, evaluate, load_config, train
 
 
@@ -49,12 +50,21 @@ def _assert_same_state_dict(left, right):
         assert torch.equal(left[name], right[name]), name
 
 
-def test_eval_checkpoints_and_final_checkpoint_replay(short_config, tmp_path):
+def test_eval_checkpoints_and_final_checkpoint_replay(short_config, tmp_path, monkeypatch):
     checkpoint_dir = tmp_path / "checkpoints"
-    result = train(
-        short_config, output_dir=tmp_path / "results",
-        checkpoint_dir=checkpoint_dir, dtype=torch.float64,
-    )
+    evaluated_states = []
+    real_evaluate = train_module.evaluate
+
+    def record_evaluation(model, config):
+        evaluated_states.append(_state_dict(model))
+        return real_evaluate(model, config)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(train_module, "evaluate", record_evaluation)
+        result = train(
+            short_config, output_dir=tmp_path / "results",
+            checkpoint_dir=checkpoint_dir, dtype=torch.float64,
+        )
 
     final_path = result.checkpoint_path
     stamp = final_path.name.removesuffix(f"_{short_config.name}.pt")
@@ -66,12 +76,17 @@ def test_eval_checkpoints_and_final_checkpoint_replay(short_config, tmp_path):
     }
     assert set(checkpoint_dir.glob("*.pt")) == set(expected_paths)
     assert [entry["step"] for entry in result.eval_history] == [2, 4]
+    assert len(evaluated_states) == 2
+    assert any(not torch.equal(evaluated_states[0][name], evaluated_states[1][name])
+               for name in evaluated_states[0])
 
     for path, step in expected_paths.items():
         checkpoint = torch.load(path, map_location="cpu", weights_only=True)
         assert checkpoint["config"] == asdict(short_config)
         assert checkpoint["step"] == step
         assert checkpoint["model"].keys() == result.model.state_dict().keys()
+        if path != final_path:
+            _assert_same_state_dict(checkpoint["model"], evaluated_states[step // 2 - 1])
 
     step_checkpoint = torch.load(
         checkpoint_dir / f"{stamp}_{short_config.name}_step2.pt",
