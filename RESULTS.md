@@ -167,3 +167,54 @@ The GRU is at 100% at every length, every seed. RLT is at chance at every length
 - One fixed schedule, one learning rate. An adaptive curriculum, a lower learning rate at transitions, or longer stages might change the result.
 - The feedback-ablation diagnostic used the Experiment 2 control model (one seed), not the Experiment 3 runs.
 - Cutting feedback at test time also shifts the decoder's input distribution, so part of the accuracy drop may not reflect reliance on recurrence.
+
+## Experiment 4 — why does RLT collapse under the curriculum?
+
+**Commit:** cee39f019bb0dc7fd24a6e702c7bfccb4641b6b8
+**Date:** 2026-10-03
+**Results:** `results/exp4/` (12 runs, all clean); analysis in `analysis/ablate_stages.py`
+
+### Question
+
+In Experiment 3, RLT collapsed at stage transitions. Is the cause (a) a short-length attention shortcut, or (b) instability in the feedback loop?
+
+### Setup
+
+RLT only, Experiment 3's curriculum and settings, `eval_interval: 1500` so evaluation and checkpoints land on stage ends. Two arms: α = 0.5 (Experiment 3's value) and α = 0.1 (the authors' feedback scale). Seeds 0, 1, 2.
+
+### Reproducibility
+
+All six α = 0.5 runs reproduce Experiment 3's 6,000-step loss histories bit for bit, despite a different commit, evaluation schedule, and checkpoint code.
+
+### Results
+
+Both arms end at chance on both tasks. α = 0.1 collapses with the same signature as α = 0.5: length 4 solved by step ~170; at the length change, gradient spikes (up to 91.9), state norm grows >10×, loss stuck at chance with gradients ~1–2. Five-state survives length 8 and collapses at 16.
+
+**The collapse is a constant answer.** On parity, every run's final accuracy at length 32 equals exactly the share of test programs ending in one class (50.63% or 49.37%). Each seed collapsed to the same constant in both arms.
+
+### Feedback cut at the stage end before each collapse
+
+Accuracy at the current stage length, evaluated as trained and with feedback cut to α = 0, same weights.
+
+| Task, checkpoint | Arm | Feedback on | Feedback cut |
+| --- | --- | --- | --- |
+| Parity, step 1,500 (length 4) | α = 0.5, seeds 0, 1 | 100% | 100% |
+| | α = 0.5, seed 2 | 100% | 69.7% |
+| | α = 0.1, all seeds | 100% | 100% |
+| Five-state, step 3,000 (length 8) | α = 0.5, all seeds | 100% | 92.8–94.9% |
+| | α = 0.1, all seeds | 100% | 99.0–100% |
+
+Accuracy one stage ahead, before training on it: parity at length 8 was 37–67%; five-state at length 16 was 20–24% (chance).
+
+### Findings
+
+- **The shortcut explains the collapse.** Before each collapse, RLT mostly solved the current length without its recurrence. That solution does not extend to the next length, and when the length changes the model collapses to a constant answer and cannot escape.
+- **Feedback instability is not supported.** α = 0.1 collapses identically, and RLT relies on its recurrence even less (cutting it has no effect at any stage). The state-norm explosion occurs in models not using their feedback, and the feedback passes through RMSNorm before the merge, so the norm growth is most likely a symptom of collapse rather than its cause.
+- **Partial reliance is not enough.** One α = 0.5 parity seed did use its feedback at length 4 and still collapsed.
+- **Combined with Experiment 3:** when a short-length shortcut is available, RLT takes it instead of learning its recurrence; the GRU has no shortcut and learns the general rule. This is consistent with the authors training on mixed lengths 3–40 in every batch, where no short-length stage exists for a shortcut to dominate.
+
+### Caveats
+
+- One curriculum schedule and learning rate.
+- Small models (59K parameters); the authors' models are ~450× larger.
+- "No change when feedback is cut" shows the recurrence wasn't needed for those answers, not that it carried no information.
