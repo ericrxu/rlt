@@ -2,6 +2,7 @@
   "name": "parity_overfit_transformer",
   "task": "parity",
   "model_type": "transformer",
+  "objective": "per_position",
   "seed": 0,
   "eval_seed": 1000,
   "dim": 40,

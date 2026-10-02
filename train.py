@@ -15,7 +15,7 @@ import torch
 
 from baselines import GRUBaseline, TransformerBaseline
 from model import RLTModel
-from objectives import state_tracking_accuracy, state_tracking_loss
+from objectives import final_state_loss, state_tracking_accuracy, state_tracking_loss
 from task import BOS, generate_five_state, generate_parity
 
 
@@ -24,6 +24,7 @@ class TrainConfig:
     name: str
     task: str
     model_type: str
+    objective: str
     seed: int
     eval_seed: int
     dim: int
@@ -50,6 +51,8 @@ class TrainConfig:
     def __post_init__(self) -> None:
         if self.task not in ("parity", "five_state"):
             raise ValueError("task must be parity or five_state")
+        if self.objective not in ("per_position", "final_state"):
+            raise ValueError("objective must be per_position or final_state")
         unused = {
             "rlt": (),
             "transformer": ("num_decoder_layers", "window_size", "alpha"),
@@ -320,7 +323,10 @@ def train(
         optimizer.zero_grad(set_to_none=True)
         with diagnostic_hooks(model) as diagnostics:
             logits = model(tokens)
-        loss = state_tracking_loss(logits, labels)
+        if config.objective == "per_position":
+            loss = state_tracking_loss(logits, labels)
+        else:
+            loss = final_state_loss(logits, labels)
         loss.backward()
         grad_norm = clip_gradients(model, config.grad_clip_norm)
         step_learning_rate = optimizer.param_groups[0]["lr"]

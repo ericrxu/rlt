@@ -28,6 +28,7 @@ def compare_results(
     commit = None
     training_settings = None
     eval_settings = None
+    objective = None
     for path in paths:
         payload = json.loads(path.read_text(encoding="utf-8"))
         config = payload["config"]
@@ -50,6 +51,11 @@ def compare_results(
             raise ValueError("training settings differ")
         if evaluation != eval_settings:
             raise ValueError("eval settings differ")
+        result_objective = config.get("objective", "per_position")
+        if objective is None:
+            objective = result_objective
+        elif result_objective != objective:
+            raise ValueError("results have different objectives")
 
         key = (config["task"], config["model_type"], config["alpha"])
         seed = payload["seed"]
