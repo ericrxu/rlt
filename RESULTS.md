@@ -65,3 +65,51 @@ This is unlikely to be a leak: the α = 0 control shares the encoder, memory, cr
 - Compute is not matched; RLT is much slower per step than the GRU.
 - Per-position state labeling, not the paper's next-token objective (5.1).
 - Small models on synthetic tasks; says nothing about RLT at scale.
+
+## Experiment 2 — final-state-only supervision
+
+**Commit:** 69a692b9aad8f01e14888b69b5e3a15a51176fd2
+**Date:** 2026-10-02
+**Results:** `results/exp2/` (12 runs, all clean); positive control in `results/exp2_control/`
+
+### Question
+
+Does per-position supervision explain why our RLT generalizes far better than the community proof-of-concept?
+
+### Setup
+
+Identical to Experiment 1 except `objective: final_state`: the loss scores only the state after the last operation. Models: RLT (α = 0.5) and GRU, the GRU serving as a control. Seeds 0, 1, 2.
+
+### Results: final-state accuracy, mean over 3 seeds
+
+| Model | Task | 32 | 128 | Exp 1 at 128 (per-position) |
+| --- | --- | --- | --- | --- |
+| RLT | Parity | 49.8% | 50.1% | 95.6% |
+| GRU | Parity | 49.8% | 50.0% | 100% |
+| RLT | Five-state | 20.3% | 19.7% | 100% |
+| GRU | Five-state | 20.0% | 20.1% | 100% |
+
+All runs ended with training loss at chance (0.693 parity, 1.609 five-state). Neither model learned, even at the training length.
+
+### Positive control
+
+To rule out a broken training path: final-only parity at train length 4, 1,000 steps, one seed.
+
+| Model | Eval at 4 | Eval at 8 (final / per-position) |
+| --- | --- | --- |
+| GRU | 100% | 100% / 100% |
+| RLT | 100% | 74.6% / 91.9% |
+
+Final-only training works; length 32 is too hard at this budget.
+
+### Findings
+
+- **Supervision is decisive at this budget.** Removing per-position labels took both models from near-perfect to chance.
+- **It does not explain the proof-of-concept.** Its GRU reached 100%, which final-only training at this budget cannot do, so it must have used denser supervision, a curriculum, or much more training. The gap between our RLT and theirs remains unexplained.
+- **No RLT-vs-GRU comparison is possible** when both are at chance.
+- **A lead, not a result:** in the length-4 control, the GRU recovered running parity at every position from the final label alone, while RLT generalized only partly to length 8. Single seed, pilot scale.
+
+### Caveats
+
+- One budget (3,000 steps, batch 64). A curriculum or much longer training might succeed.
+- The positive control is one seed at a much shorter length.
