@@ -298,6 +298,9 @@ and any change must be recorded here.
 | Diagnostics for baselines | Gate and state-norm diagnostics exist only for RLT; baselines record them as null. |
 | Fields by model type | Fields that don't apply to a model type must be `null`; setting them raises an error. Transformer: `num_decoder_layers`, `window_size`, `alpha` are null. GRU: `dim` = hidden and embedding width, `num_encoder_layers` = GRU layer count; `num_decoder_layers`, `num_heads`, `head_dim`, `window_size`, `alpha`, `rms_eps` are null. |
 | Experiment configs | `configs/{parity,five_state}_{rlt,transformer,gru}.json`, all parameter-matched to the RLT reference. |
+| Experiment 1 | Train at length 32, fresh data, 3,000 steps, batch 64, lr 0.003→0.0003 with 200 warmup, weight decay 0.01, clip 1.0. Eval at 32/48/64/96/128 on 2,048 programs, eval_seed 1000, every 1,000 steps. Models: RLT (α=0.5, W=3, G=1), RLT α=0, transformer, GRU. Seeds 0, 1, 2. Settings are identical across models within a task; never tuned on lengths above 32. |
+| Sweep runner | `run_sweep.py`: base config plus seed list; overrides `seed` and appends `_s{seed}` to `name`. Refuses to start on a dirty repo. Skips runs whose results already exist for the same name and commit. Sets and records CPU thread count. |
+| Comparison | `compare.py`: groups results by task, model type, and α; reports mean, min, max over seeds of final-state accuracy at each eval length. Refuses if any run is dirty, commits differ, a seed is missing, or eval settings differ. |
 
 ## Known ambiguities — ask, don't guess
 
