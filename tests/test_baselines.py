@@ -130,7 +130,7 @@ def test_each_model_trains_and_records_diagnostics(model_type, tmp_path):
             assert entry["mean_state_norm"] is None
 
 
-@pytest.mark.parametrize("model_type,field", (
+@pytest.mark.parametrize("model_type,field", tuple(
     (model_type, field)
     for model_type, fields in UNUSED_FIELDS.items() for field in fields
 ))
