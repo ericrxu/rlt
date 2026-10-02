@@ -16,6 +16,7 @@
     "train_length":  32,
     "batch_size":  64,
     "train_programs":  null,
+    "length_mix": null,
     "curriculum":  [
                        [
                            4,

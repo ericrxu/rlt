@@ -31,6 +31,8 @@ def compare_results(
     objective = None
     unset_curriculum = object()
     curriculum = unset_curriculum
+    unset_length_mix = object()
+    length_mix = unset_length_mix
     for path in paths:
         payload = json.loads(path.read_text(encoding="utf-8"))
         config = payload["config"]
@@ -63,6 +65,11 @@ def compare_results(
             curriculum = result_curriculum
         elif result_curriculum != curriculum:
             raise ValueError("results have different curriculum settings")
+        result_length_mix = config.get("length_mix")
+        if length_mix is unset_length_mix:
+            length_mix = result_length_mix
+        elif result_length_mix != length_mix:
+            raise ValueError("results have different length_mix settings")
 
         key = (config["task"], config["model_type"], config["alpha"])
         seed = payload["seed"]
