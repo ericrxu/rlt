@@ -364,6 +364,7 @@ def train(
     payload = {
         "config": asdict(config), "git_commit": commit, "dirty": dirty,
         "seed": config.seed, "dtype": str(dtype).removeprefix("torch."),
+        "cpu_threads": torch.get_num_threads(),
         "torch_version": torch.__version__, "parameter_count": count_parameters(model),
         "loss_history": loss_history, "eval_history": eval_history,
         "diagnostics": diagnostics_history,

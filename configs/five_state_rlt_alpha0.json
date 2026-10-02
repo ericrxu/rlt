@@ -1,6 +1,6 @@
 {
-    "name":  "parity_rlt",
-    "task":  "parity",
+    "name":  "five_state_rlt_alpha0",
+    "task":  "five_state",
     "model_type":  "rlt",
     "seed":  0,
     "eval_seed":  1000,
@@ -10,7 +10,7 @@
     "num_heads":  2,
     "head_dim":  16,
     "window_size":  3,
-    "alpha":  0.5,
+    "alpha":  0,
     "rms_eps":  1E-06,
     "train_length":  32,
     "batch_size":  64,
