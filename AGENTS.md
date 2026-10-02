@@ -296,6 +296,8 @@ and any change must be recorded here.
 | GRU baseline | Embedding, then unidirectional `nn.GRU`, then a bias-free readout. |
 | Parameter matching | Baselines within ±5% of the RLT reference config's parameter count. Compute is not matched; say so when reporting. |
 | Diagnostics for baselines | Gate and state-norm diagnostics exist only for RLT; baselines record them as null. |
+| Fields by model type | Fields that don't apply to a model type must be `null`; setting them raises an error. Transformer: `num_decoder_layers`, `window_size`, `alpha` are null. GRU: `dim` = hidden and embedding width, `num_encoder_layers` = GRU layer count; `num_decoder_layers`, `num_heads`, `head_dim`, `window_size`, `alpha`, `rms_eps` are null. |
+| Experiment configs | `configs/{parity,five_state}_{rlt,transformer,gru}.json`, all parameter-matched to the RLT reference. |
 
 ## Known ambiguities — ask, don't guess
 
