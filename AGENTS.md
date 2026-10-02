@@ -301,6 +301,8 @@ and any change must be recorded here.
 | Experiment 1 | Train at length 32, fresh data, 3,000 steps, batch 64, lr 0.003→0.0003 with 200 warmup, weight decay 0.01, clip 1.0. Eval at 32/48/64/96/128 on 2,048 programs, eval_seed 1000, every 1,000 steps. Models: RLT (α=0.5, W=3, G=1), RLT α=0, transformer, GRU. Seeds 0, 1, 2. Settings are identical across models within a task; never tuned on lengths above 32. |
 | Sweep runner | `run_sweep.py`: base config plus seed list; overrides `seed` and appends `_s{seed}` to `name`. Refuses to start on a dirty repo. Skips runs whose results already exist for the same name and commit. Sets and records CPU thread count. |
 | Comparison | `compare.py`: groups results by task, model type, and α; reports mean, min, max over seeds of final-state accuracy at each eval length. Refuses if any run is dirty, commits differ, a seed is missing, or eval settings differ. |
+| Training objective | Config field `objective`: `per_position` (Experiment 1) or `final_state` (loss on the last position only). Required. Results without the field were all `per_position`. `compare.py` refuses to mix objectives. |
+| Experiment 2 | Identical to Experiment 1 except `objective: final_state`. Models: RLT (α=0.5) and GRU only. Results in `results/exp2/`. |
 
 ## Known ambiguities — ask, don't guess
 
