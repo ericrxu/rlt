@@ -13,12 +13,12 @@
     "alpha":  0.5,
     "rms_eps":  1E-06,
     "train_length":  32,
-    "batch_size":  100,
+    "batch_size":  64,
     "train_programs":  null,
-    "steps":  2000,
+    "steps":  3000,
     "learning_rate":  0.003,
     "min_learning_rate":  0.0003,
-    "warmup_steps":  100,
+    "warmup_steps":  200,
     "weight_decay":  0.01,
     "grad_clip_norm":  1.0,
     "eval_lengths":  [
@@ -29,5 +29,5 @@
                          128
                      ],
     "eval_programs":  2048,
-    "eval_interval":  500
+    "eval_interval":  1000
 }
