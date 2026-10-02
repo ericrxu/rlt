@@ -113,3 +113,57 @@ Final-only training works; length 32 is too hard at this budget.
 
 - One budget (3,000 steps, batch 64). A curriculum or much longer training might succeed.
 - The positive control is one seed at a much shorter length.
+
+## Experiment 3 — final-state supervision with a curriculum
+
+**Commit:** 0c69a4f5edf5525bf5a0edf9a3be264ee4570cdb
+**Date:** 2026-10-02
+**Results:** `results/exp3/` (12 runs, all clean); diagnostics in `results/exp3_diagnostics/`; analysis scripts in `analysis/`
+
+### Question
+
+Experiment 2 showed final-only training fails at length 32 for both models. Can a curriculum fix it, and do RLT and the GRU respond the same way?
+
+### Setup
+
+Identical to Experiment 2, but with curriculum `[[4, 1500], [8, 1500], [16, 1500], [32, 1500]]`, 6,000 steps total (roughly matched wall-clock to Experiment 2, since short stages are cheaper). RLT (α = 0.5) and GRU, seeds 0, 1, 2.
+
+### Results: final-state accuracy at length 128, mean over 3 seeds
+
+| Model | Exp 1 (per-position) | Exp 2 (final-only) | Exp 3 (final-only + curriculum) |
+| --- | --- | --- | --- |
+| GRU, parity | 100% | 50% | **100%** |
+| GRU, five-state | 100% | 20% | **100%** |
+| RLT, parity | 95.6% | 50% | **50%** |
+| RLT, five-state | 100% | 20% | **20%** |
+
+The GRU is at 100% at every length, every seed. RLT is at chance at every length.
+
+### Stage-by-stage (RLT)
+
+- **Parity, all seeds:** solves length 4 by step ~160–190. At the switch to length 8, gradient norm spikes to 17–69 (clip limit 1.0), state norm jumps ~10× (from ~15 to 150–260), and loss settles at chance. It never recovers; gradients shrink to ~1.5 through the remaining stages.
+- **Five-state, all seeds:** solves lengths 4 and 8, then collapses the same way at length 16.
+
+### Diagnostics
+
+**A shortcut exists.** RLT with α = 0 (no recurrence), final-only at length 4, 1,000 steps: 100% at length 4, 48% at length 8.
+
+**RLT used its recurrence, but not only that.** The Experiment 2 control checkpoint (RLT α = 0.5, final-only, length 4), evaluated with feedback cut to α = 0 at test time:
+
+| | Feedback on | Feedback cut |
+| --- | --- | --- |
+| Length 4, final-state | 100% | 72.3% |
+| Length 4, per-position | 100% | 77.3% |
+
+### Findings
+
+- **The curriculum fixes final-only training for the GRU completely, and not at all for RLT.** For the first time, the two recurrent models differ sharply.
+- **RLT learns a mixed solution at short lengths**, relying partly on recurrence and partly on attention paths that can see the whole short program. That solution does not extend to longer programs.
+- **RLT fails by collapse at length transitions:** gradient spike, ~10× state-norm growth, predictions stuck at chance.
+- **Cause of the collapse is open:** the attention component breaking at longer lengths, instability in the feedback loop, or both. Only final checkpoints were saved, so the model at the end of each stage cannot be inspected.
+
+### Caveats
+
+- One fixed schedule, one learning rate. An adaptive curriculum, a lower learning rate at transitions, or longer stages might change the result.
+- The feedback-ablation diagnostic used the Experiment 2 control model (one seed), not the Experiment 3 runs.
+- Cutting feedback at test time also shifts the decoder's input distribution, so part of the accuracy drop may not reflect reliance on recurrence.
