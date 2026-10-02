@@ -17,7 +17,7 @@ import pytest
 import torch
 
 import train as train_module
-from objectives import state_tracking_accuracy
+from objectives import state_tracking_accuracy, state_tracking_loss
 from task import BOS
 from train import (
     TrainConfig,
@@ -50,7 +50,8 @@ def deterministic_float64():
 @pytest.fixture
 def config():
     return TrainConfig(
-        name="parity_test", task="parity", model_type="rlt", seed=17, eval_seed=701,
+        name="parity_test", task="parity", model_type="rlt",
+        objective="per_position", seed=17, eval_seed=701,
         dim=4, num_encoder_layers=1, num_decoder_layers=1,
         num_heads=1, head_dim=4, window_size=2, alpha=0.75,
         rms_eps=1e-6, train_length=2, batch_size=16, train_programs=16,
@@ -92,6 +93,93 @@ def test_config_requires_every_field_and_rejects_unknown_fields(config, tmp_path
     path.write_text(json.dumps(unknown), encoding="utf-8")
     with pytest.raises((TypeError, ValueError)):
         load_config(path)
+
+
+def test_config_requires_objective_and_rejects_unknown_value(config, tmp_path):
+    data = asdict(config)
+    path = tmp_path / "config.json"
+
+    missing = data.copy()
+    del missing["objective"]
+    path.write_text(json.dumps(missing), encoding="utf-8")
+    with pytest.raises((TypeError, ValueError)):
+        load_config(path)
+
+    path.write_text(json.dumps(data | {"objective": "unknown"}), encoding="utf-8")
+    with pytest.raises(ValueError, match="objective"):
+        load_config(path)
+
+
+def _one_step_with_labels(config, tmp_path, monkeypatch, labels):
+    tokens = torch.tensor([[BOS, 0, 1, 0], [BOS, 1, 0, 1]])
+    logits_seen = []
+    gradients_seen = []
+    original_build_model = train_module.build_model
+    original_clip_gradients = train_module.clip_gradients
+
+    def capture_model(run_config):
+        model = original_build_model(run_config)
+        model.register_forward_hook(
+            lambda _module, _inputs, logits: logits_seen.append(logits.detach().clone())
+        )
+        return model
+
+    def capture_gradients(model, limit):
+        gradients_seen.append({
+            name: parameter.grad.detach().clone()
+            for name, parameter in model.named_parameters()
+            if parameter.grad is not None
+        })
+        return original_clip_gradients(model, limit)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(train_module, "build_model", capture_model)
+        patch.setattr(train_module, "clip_gradients", capture_gradients)
+        patch.setattr(train_module, "make_training_batch",
+                      lambda _config, _step: (tokens, labels))
+        patch.setattr(train_module, "_git_metadata", lambda: ("a" * 40, False))
+        result = train(
+            replace(config, train_length=3, batch_size=2, train_programs=2,
+                    steps=1, warmup_steps=1, eval_interval=1),
+            output_dir=tmp_path / "results", dtype=torch.float64,
+            checkpoint_dir=tmp_path / "checkpoints",
+        )
+    assert len(gradients_seen) == 1
+    return result.loss_history[0], logits_seen[0], gradients_seen[0]
+
+
+@pytest.mark.parametrize("objective,expect_equal", [
+    ("final_state", True), ("per_position", False),
+])
+def test_training_gradients_respond_to_labels_selected_by_objective(
+    config, tmp_path, monkeypatch, objective, expect_equal,
+):
+    first_labels = torch.tensor([[0, 1, 0], [1, 0, 1]])
+    changed_labels = torch.tensor([[1, 0, 0], [0, 1, 1]])
+    run_config = replace(config, objective=objective)
+
+    _, first_logits, first_grads = _one_step_with_labels(
+        run_config, tmp_path / "first", monkeypatch, first_labels,
+    )
+    _, changed_logits, changed_grads = _one_step_with_labels(
+        run_config, tmp_path / "changed", monkeypatch, changed_labels,
+    )
+    assert torch.equal(first_logits, changed_logits)
+    assert first_grads.keys() == changed_grads.keys()
+    equal = all(torch.equal(first_grads[name], changed_grads[name])
+                for name in first_grads)
+    assert equal is expect_equal
+
+
+def test_per_position_step_loss_matches_state_tracking_loss(
+    config, tmp_path, monkeypatch,
+):
+    labels = torch.tensor([[0, 1, 0], [1, 0, 1]])
+    actual, logits, _ = _one_step_with_labels(
+        config, tmp_path, monkeypatch, labels,
+    )
+    expected = state_tracking_loss(logits, labels).item()
+    assert actual == expected
 
 
 def test_fixed_program_count_must_match_batch_size(config, tmp_path):

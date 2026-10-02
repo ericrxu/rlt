@@ -4,9 +4,11 @@ import math
 
 import pytest
 import torch
+import torch.nn.functional as F
 
 from model import RLTModel
 from objectives import (
+    final_state_loss,
     lm_loss,
     sft_loss,
     state_tracking_accuracy,
@@ -122,6 +124,26 @@ def test_state_tracking_scores_after_each_operation():
     assert state_tracking_loss(shifted, labels).item() > 1.0
 
 
+def test_final_state_loss_matches_last_readout_cross_entropy():
+    logits = torch.randn(2, 4, 5)
+    labels = torch.tensor([[0, 1, 3], [4, 2, 0]])
+
+    expected = F.cross_entropy(logits[:, -1], labels[:, -1])
+    torch.testing.assert_close(final_state_loss(logits, labels), expected, rtol=0, atol=0)
+
+
+def test_final_state_loss_ignores_every_earlier_readout():
+    logits = torch.randn(2, 4, 5)
+    labels = torch.tensor([[0, 1, 3], [4, 2, 0]])
+    expected = final_state_loss(logits, labels)
+
+    for position in range(logits.shape[1] - 1):
+        changed = logits.clone()
+        changed[:, position] += torch.tensor([2.0, -3.0, 4.0, -5.0, 6.0])
+        torch.testing.assert_close(final_state_loss(changed, labels), expected,
+                                   rtol=0, atol=0)
+
+
 def test_state_tracking_accuracy_counts_positions_and_final_states():
     labels = torch.tensor([[0, 1, 2], [2, 1, 0]])
     predictions = torch.tensor([[0, 1, 0], [2, 0, 0]])
@@ -133,7 +155,8 @@ def test_state_tracking_accuracy_counts_positions_and_final_states():
     torch.testing.assert_close(final_state, torch.tensor(1 / 2), rtol=0, atol=1e-12)
 
 
-@pytest.mark.parametrize("objective", [state_tracking_loss, state_tracking_accuracy])
+@pytest.mark.parametrize("objective", [state_tracking_loss, state_tracking_accuracy,
+                                       final_state_loss])
 def test_state_tracking_rejects_wrong_label_length(objective):
     logits = torch.randn(2, 5, 3)
     labels = torch.tensor([[0, 1, 2], [2, 1, 0]])
@@ -141,7 +164,8 @@ def test_state_tracking_rejects_wrong_label_length(objective):
         objective(logits, labels)
 
 
-@pytest.mark.parametrize("objective", [state_tracking_loss, state_tracking_accuracy])
+@pytest.mark.parametrize("objective", [state_tracking_loss, state_tracking_accuracy,
+                                       final_state_loss])
 @pytest.mark.parametrize("invalid", [-1, 3, 4])
 def test_state_tracking_rejects_labels_outside_readout_classes(objective, invalid):
     # Five-state labels cannot be scored by a three-class readout.
@@ -149,3 +173,15 @@ def test_state_tracking_rejects_labels_outside_readout_classes(objective, invali
     labels = torch.tensor([[0, 1, invalid, 2]])
     with pytest.raises(ValueError):
         objective(logits, labels)
+
+
+@pytest.mark.parametrize("logit_shape,label_shape", [
+    ((2, 3), (2, 2)),
+    ((2, 3, 4), (2,)),
+    ((2, 3, 4), (1, 2)),
+])
+def test_final_state_loss_rejects_rank_and_batch_shape_errors(logit_shape, label_shape):
+    logits = torch.randn(logit_shape)
+    labels = torch.zeros(label_shape, dtype=torch.long)
+    with pytest.raises(ValueError):
+        final_state_loss(logits, labels)

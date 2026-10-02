@@ -41,6 +41,7 @@ def deterministic_float64():
 def _config(model_type: str, task: str = "parity") -> TrainConfig:
     fields = dict(
         name=f"{task}_{model_type}_test", task=task, model_type=model_type,
+        objective="per_position",
         seed=17, eval_seed=701, dim=8, num_encoder_layers=1,
         num_decoder_layers=1, num_heads=2, head_dim=4, window_size=2,
         alpha=0.75, rms_eps=1e-6, train_length=1, batch_size=16,
