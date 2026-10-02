@@ -305,6 +305,8 @@ and any change must be recorded here.
 | Experiment 2 | Identical to Experiment 1 except `objective: final_state`. Models: RLT (α=0.5) and GRU only. Results in `results/exp2/`. |
 | Curriculum | Config field `curriculum`: `null` or a list of `[length, steps]` stages. Required. Steps sum to `steps`; last length equals `train_length`; lengths non-decreasing; requires `train_programs: null`. Steps are one-based: stage k covers its steps after all earlier stages. Results without the field had `curriculum: null`. `compare.py` refuses to mix curricula. |
 | Experiment 3 | Final-state objective with curriculum `[[4, 1500], [8, 1500], [16, 1500], [32, 1500]]`, 6,000 steps. Otherwise identical to Experiment 2. Models: RLT (α=0.5) and GRU. Results in `results/exp3/`. |
+| Eval checkpoints | `train()` saves a checkpoint at every eval step, named `{stamp}_{name}_step{N}.pt`, in addition to the final one. Saving checkpoints must not change training. |
+| Experiment 4 | RLT only, Experiment 3 curriculum and settings, with `eval_interval: 1500` so evals and checkpoints land on stage ends. Arms: α = 0.5 (should reproduce Experiment 3's loss histories exactly) and α = 0.1 (the authors' feedback scale). Seeds 0, 1, 2. Results in `results/exp4/`. |
 
 ## Known ambiguities — ask, don't guess
 
