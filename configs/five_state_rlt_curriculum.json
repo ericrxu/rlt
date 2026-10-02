@@ -1,8 +1,8 @@
 {
-    "name":  "parity_rlt",
-    "task":  "parity",
+    "name":  "five_state_rlt_curriculum",
+    "task":  "five_state",
     "model_type":  "rlt",
-    "objective": "per_position",
+    "objective":  "final_state",
     "seed":  0,
     "eval_seed":  1000,
     "dim":  32,
@@ -16,8 +16,25 @@
     "train_length":  32,
     "batch_size":  64,
     "train_programs":  null,
-    "curriculum": null,
-    "steps":  3000,
+    "curriculum":  [
+                       [
+                           4,
+                           1500
+                       ],
+                       [
+                           8,
+                           1500
+                       ],
+                       [
+                           16,
+                           1500
+                       ],
+                       [
+                           32,
+                           1500
+                       ]
+                   ],
+    "steps":  6000,
     "learning_rate":  0.003,
     "min_learning_rate":  0.0003,
     "warmup_steps":  200,

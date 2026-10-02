@@ -29,6 +29,8 @@ def compare_results(
     training_settings = None
     eval_settings = None
     objective = None
+    unset_curriculum = object()
+    curriculum = unset_curriculum
     for path in paths:
         payload = json.loads(path.read_text(encoding="utf-8"))
         config = payload["config"]
@@ -56,6 +58,11 @@ def compare_results(
             objective = result_objective
         elif result_objective != objective:
             raise ValueError("results have different objectives")
+        result_curriculum = config.get("curriculum")
+        if curriculum is unset_curriculum:
+            curriculum = result_curriculum
+        elif result_curriculum != curriculum:
+            raise ValueError("results have different curriculum settings")
 
         key = (config["task"], config["model_type"], config["alpha"])
         seed = payload["seed"]

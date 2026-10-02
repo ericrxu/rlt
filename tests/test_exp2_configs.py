@@ -30,7 +30,7 @@ def test_final_state_config_only_changes_name_and_objective(task, model_type):
 
 def test_existing_configs_explicitly_use_per_position():
     for path in CONFIG_DIR.glob("*.json"):
-        if path.stem.endswith("_final"):
+        if path.stem.endswith(("_final", "_curriculum")):
             continue
         config = json.loads(path.read_text(encoding="utf-8"))
         assert config["objective"] == "per_position", path.name

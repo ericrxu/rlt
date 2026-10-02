@@ -38,6 +38,7 @@ class TrainConfig:
     train_length: int
     batch_size: int
     train_programs: int | None
+    curriculum: list[list[int]] | None
     steps: int
     learning_rate: float
     min_learning_rate: float
@@ -76,6 +77,26 @@ class TrainConfig:
                 raise ValueError(f"{name} is required for {self.model_type}")
         if self.train_programs is not None and self.batch_size != self.train_programs:
             raise ValueError("batch_size must equal train_programs for a fixed dataset")
+        if self.curriculum is not None:
+            if not isinstance(self.curriculum, list) or not self.curriculum:
+                raise ValueError("curriculum must be a nonempty list of stages")
+            if self.train_programs is not None:
+                raise ValueError("curriculum requires train_programs to be null")
+            previous_length = 0
+            total_steps = 0
+            for stage in self.curriculum:
+                if (not isinstance(stage, list) or len(stage) != 2
+                        or any(type(value) is not int or value < 1 for value in stage)):
+                    raise ValueError("each curriculum stage must be [positive length, positive steps]")
+                length, stage_steps = stage
+                if length < previous_length:
+                    raise ValueError("curriculum lengths must be non-decreasing")
+                previous_length = length
+                total_steps += stage_steps
+            if total_steps != self.steps:
+                raise ValueError("curriculum stage steps must sum to steps")
+            if previous_length != self.train_length:
+                raise ValueError("curriculum must end at train_length")
         for name in ("dim", "num_encoder_layers", "num_decoder_layers", "num_heads",
                      "head_dim", "window_size", "train_length", "batch_size", "steps",
                      "warmup_steps", "eval_programs", "eval_interval"):
@@ -94,6 +115,8 @@ class TrainConfig:
 
 def load_config(path: str | Path) -> TrainConfig:
     data = json.loads(Path(path).read_text(encoding="utf-8"))
+    if "curriculum" not in data:
+        raise ValueError("curriculum is required")
     return TrainConfig(**data)
 
 
@@ -143,13 +166,21 @@ def _batch(config: TrainConfig, length: int, count: int, seed: int):
 def make_training_batch(config: TrainConfig, step: int):
     if step < 1:
         raise ValueError("training steps are one-based")
+    length = config.train_length
+    if config.curriculum is not None:
+        end_step = 0
+        for stage_length, stage_steps in config.curriculum:
+            end_step += stage_steps
+            if step <= end_step:
+                length = stage_length
+                break
     if config.train_programs is None:
         seed = _derived_seed(0, config.seed, _task_number(config.task), step)
         count = config.batch_size
     else:
         seed = _derived_seed(0, config.seed, _task_number(config.task))
         count = config.train_programs
-    return _batch(config, config.train_length, count, seed)
+    return _batch(config, length, count, seed)
 
 
 def make_eval_batch(config: TrainConfig, length: int):
