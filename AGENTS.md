@@ -303,6 +303,8 @@ and any change must be recorded here.
 | Comparison | `compare.py`: groups results by task, model type, and α; reports mean, min, max over seeds of final-state accuracy at each eval length. Refuses if any run is dirty, commits differ, a seed is missing, or eval settings differ. |
 | Training objective | Config field `objective`: `per_position` (Experiment 1) or `final_state` (loss on the last position only). Required. Results without the field were all `per_position`. `compare.py` refuses to mix objectives. |
 | Experiment 2 | Identical to Experiment 1 except `objective: final_state`. Models: RLT (α=0.5) and GRU only. Results in `results/exp2/`. |
+| Curriculum | Config field `curriculum`: `null` or a list of `[length, steps]` stages. Required. Steps sum to `steps`; last length equals `train_length`; lengths non-decreasing; requires `train_programs: null`. Steps are one-based: stage k covers its steps after all earlier stages. Results without the field had `curriculum: null`. `compare.py` refuses to mix curricula. |
+| Experiment 3 | Final-state objective with curriculum `[[4, 1500], [8, 1500], [16, 1500], [32, 1500]]`, 6,000 steps. Otherwise identical to Experiment 2. Models: RLT (α=0.5) and GRU. Results in `results/exp3/`. |
 
 ## Known ambiguities — ask, don't guess
 
