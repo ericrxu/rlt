@@ -53,7 +53,7 @@ All experiments use per-position state labeling, not the paper's next-token obje
 
 ### Comparison to the published proof-of-concept
 
-Note: the RLT paper itself reports no experimental results. The figures below are from an independent proof-of-concept on the project page, with a setup that is only partly documented, so this is a conceptual replication rather than an exact one.
+Note: the September 12 version of the report contained no experiments. The authors' project page has since added their own results (eight-layer encoder–decoder splits, six algorithmic tasks, three seeds). Their parity results agree with ours: RLT holds 100% at 256 bits for the 5+3 and 7+1 splits while a decoder-only Transformer is near chance. They report permutation tracking as still difficult (4+4 at 55.70 ± 25.78% on swaps-based tracking at length 512); our five-state RLT reaches 100% at length 128, under per-position supervision and a different task. The 60.8% / 20.7% figures below are from an independent community proof-of-concept listed on the same page.
 
 The proof-of-concept reported RLT at 60.8% (parity) and 20.7% (five-state) at length 128, with GRU at 100% and 99.97%. Our GRU and transformer numbers match theirs closely; our RLT is substantially higher (95.6% and 100%).
 
