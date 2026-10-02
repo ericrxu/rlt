@@ -348,6 +348,13 @@ def train(
     loss_history: list[float] = []
     eval_history: list[dict] = []
     diagnostics_history: list[dict] = []
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    checkpoint_dir = Path(checkpoint_dir)
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    results_path = output_dir / f"{stamp}_{config.name}.json"
+    checkpoint_path = checkpoint_dir / f"{stamp}_{config.name}.pt"
     model.train()
     for step in range(1, config.steps + 1):
         tokens, labels = make_training_batch(config, step)
@@ -382,6 +389,10 @@ def train(
             if config.train_programs is not None:
                 entry["training_set"] = _fixed_training_accuracy(model, config)
             eval_history.append(entry)
+            torch.save(
+                {"config": asdict(config), "step": step, "model": model.state_dict()},
+                checkpoint_dir / f"{stamp}_{config.name}_step{step}.pt",
+            )
         if log_every is not None and step % log_every == 0:
             mean_gate = diagnostics_history[-1]["mean_gate"]
             gate_text = "None" if mean_gate is None else f"{mean_gate:.9g}"
@@ -391,13 +402,6 @@ def train(
                 f"mean_gate={gate_text}"
             )
 
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    checkpoint_dir = Path(checkpoint_dir)
-    checkpoint_dir.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
-    results_path = output_dir / f"{stamp}_{config.name}.json"
-    checkpoint_path = checkpoint_dir / f"{stamp}_{config.name}.pt"
     payload = {
         "config": asdict(config), "git_commit": commit, "dirty": dirty,
         "seed": config.seed, "dtype": str(dtype).removeprefix("torch."),
@@ -407,7 +411,8 @@ def train(
         "diagnostics": diagnostics_history,
     }
     results_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
-    torch.save({"config": asdict(config), "model": model.state_dict()}, checkpoint_path)
+    torch.save({"config": asdict(config), "step": config.steps,
+                "model": model.state_dict()}, checkpoint_path)
     return TrainResult(model, loss_history, eval_history, diagnostics_history,
                        results_path, checkpoint_path)
 
