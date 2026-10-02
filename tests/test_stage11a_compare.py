@@ -57,6 +57,15 @@ def _group(summary, task, model_type, alpha):
                 and group["alpha"] == alpha)
 
 
+def _set_result_objective(path, objective):
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if objective is None:
+        payload["config"].pop("objective", None)
+    else:
+        payload["config"]["objective"] = objective
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+
 def test_compare_uses_final_eval_and_reports_mean_min_max_by_length(tmp_path):
     for seed, scores in enumerate(((0.2, 0.3), (0.4, 0.5), (0.6, 0.7))):
         _result(tmp_path, "rlt", seed, scores)
@@ -93,6 +102,38 @@ def test_compare_accepts_fair_rlt_transformer_and_gru_results(tmp_path):
     assert _group(summary, "parity", "gru", None)["lengths"]["48"] == {
         "mean": 0.9, "min": 0.9, "max": 0.9,
     }
+
+
+def test_compare_rejects_mixed_objectives(tmp_path):
+    for seed in (0, 1, 2):
+        _result(tmp_path, "rlt", seed, (0.3, 0.4))
+        final_path = _result(tmp_path, "gru", seed, (0.8, 0.9))
+        _set_result_objective(final_path, "final_state")
+
+    with pytest.raises(ValueError, match="objective"):
+        _compare(tmp_path)
+
+
+def test_compare_treats_missing_objective_as_per_position(tmp_path):
+    for seed in (0, 1, 2):
+        legacy_path = _result(tmp_path, "rlt", seed, (0.3, 0.4))
+        _set_result_objective(legacy_path, None)
+        _result(tmp_path, "gru", seed, (0.8, 0.9))
+
+    summary = _compare(tmp_path)
+    assert len(summary) == 2
+    assert _group(summary, "parity", "rlt", 0.5)["lengths"]["32"]["mean"] == 0.3
+
+
+def test_compare_rejects_legacy_and_final_state_mix(tmp_path):
+    for seed in (0, 1, 2):
+        legacy_path = _result(tmp_path, "rlt", seed, (0.3, 0.4))
+        _set_result_objective(legacy_path, None)
+        final_path = _result(tmp_path, "gru", seed, (0.8, 0.9))
+        _set_result_objective(final_path, "final_state")
+
+    with pytest.raises(ValueError, match="objective"):
+        _compare(tmp_path)
 
 
 @pytest.mark.parametrize("defect", ("dirty", "commit", "missing_seed", "eval_seed",

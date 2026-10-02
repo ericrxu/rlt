@@ -2,6 +2,7 @@
     "name":  "parity_rlt_alpha0",
     "task":  "parity",
     "model_type":  "rlt",
+    "objective": "per_position",
     "seed":  0,
     "eval_seed":  1000,
     "dim":  32,

@@ -70,6 +70,12 @@ def state_tracking_loss(logits: torch.Tensor, labels: torch.Tensor) -> torch.Ten
     )
 
 
+def final_state_loss(logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
+    """Score only the state after the final operation."""
+    predictions = _state_tracking_logits(logits, labels)
+    return F.cross_entropy(predictions[:, -1, :], labels[:, -1])
+
+
 def state_tracking_accuracy(
     logits: torch.Tensor, labels: torch.Tensor
 ) -> tuple[torch.Tensor, torch.Tensor]:

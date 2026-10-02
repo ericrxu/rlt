@@ -2,6 +2,7 @@
     "name":  "five_state_rlt",
     "task":  "five_state",
     "model_type":  "rlt",
+    "objective": "per_position",
     "seed":  0,
     "eval_seed":  1000,
     "dim":  32,
