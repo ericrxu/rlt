@@ -1,6 +1,7 @@
 {
   "name": "parity_overfit",
   "task": "parity",
+  "model_type": "rlt",
   "seed": 0,
   "eval_seed": 1000,
   "dim": 32,

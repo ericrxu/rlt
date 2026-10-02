@@ -1,0 +1,33 @@
+{
+    "name":  "five_state_transformer",
+    "task":  "five_state",
+    "model_type":  "transformer",
+    "seed":  0,
+    "eval_seed":  1000,
+    "dim":  40,
+    "num_encoder_layers":  3,
+    "num_decoder_layers":  null,
+    "num_heads":  2,
+    "head_dim":  20,
+    "window_size":  null,
+    "alpha":  null,
+    "rms_eps":  1E-06,
+    "train_length":  32,
+    "batch_size":  100,
+    "train_programs":  null,
+    "steps":  2000,
+    "learning_rate":  0.003,
+    "min_learning_rate":  0.0003,
+    "warmup_steps":  100,
+    "weight_decay":  0.01,
+    "grad_clip_norm":  1.0,
+    "eval_lengths":  [
+                         32,
+                         48,
+                         64,
+                         96,
+                         128
+                     ],
+    "eval_programs":  2048,
+    "eval_interval":  500
+}

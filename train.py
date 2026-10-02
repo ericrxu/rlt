@@ -13,6 +13,7 @@ import subprocess
 import numpy as np
 import torch
 
+from baselines import GRUBaseline, TransformerBaseline
 from model import RLTModel
 from objectives import state_tracking_accuracy, state_tracking_loss
 from task import BOS, generate_five_state, generate_parity
@@ -22,16 +23,17 @@ from task import BOS, generate_five_state, generate_parity
 class TrainConfig:
     name: str
     task: str
+    model_type: str
     seed: int
     eval_seed: int
     dim: int
     num_encoder_layers: int
-    num_decoder_layers: int
-    num_heads: int
-    head_dim: int
-    window_size: int
-    alpha: float
-    rms_eps: float
+    num_decoder_layers: int | None
+    num_heads: int | None
+    head_dim: int | None
+    window_size: int | None
+    alpha: float | None
+    rms_eps: float | None
     train_length: int
     batch_size: int
     train_programs: int | None
@@ -48,12 +50,34 @@ class TrainConfig:
     def __post_init__(self) -> None:
         if self.task not in ("parity", "five_state"):
             raise ValueError("task must be parity or five_state")
+        unused = {
+            "rlt": (),
+            "transformer": ("num_decoder_layers", "window_size", "alpha"),
+            "gru": (
+                "num_decoder_layers", "num_heads", "head_dim", "window_size",
+                "alpha", "rms_eps",
+            ),
+        }
+        if self.model_type not in unused:
+            raise ValueError("model_type must be rlt, transformer, or gru")
+        model_fields = (
+            "dim", "num_encoder_layers", "num_decoder_layers", "num_heads",
+            "head_dim", "window_size", "alpha", "rms_eps",
+        )
+        for name in model_fields:
+            value = getattr(self, name)
+            if name in unused[self.model_type]:
+                if value is not None:
+                    raise ValueError(f"{name} must be null for {self.model_type}")
+            elif value is None:
+                raise ValueError(f"{name} is required for {self.model_type}")
         if self.train_programs is not None and self.batch_size != self.train_programs:
             raise ValueError("batch_size must equal train_programs for a fixed dataset")
         for name in ("dim", "num_encoder_layers", "num_decoder_layers", "num_heads",
                      "head_dim", "window_size", "train_length", "batch_size", "steps",
                      "warmup_steps", "eval_programs", "eval_interval"):
-            if getattr(self, name) < 1:
+            value = getattr(self, name)
+            if value is not None and value < 1:
                 raise ValueError(f"{name} must be positive")
         if not self.eval_lengths or any(length < 1 for length in self.eval_lengths):
             raise ValueError("eval_lengths must contain positive lengths")
@@ -70,9 +94,17 @@ def load_config(path: str | Path) -> TrainConfig:
     return TrainConfig(**data)
 
 
-def build_model(config: TrainConfig) -> RLTModel:
+def build_model(config: TrainConfig) -> torch.nn.Module:
+    vocab_size = 3 if config.task == "parity" else 5
+    if config.model_type == "transformer":
+        return TransformerBaseline(
+            vocab_size, config.dim, config.num_encoder_layers,
+            config.num_heads, config.head_dim, config.rms_eps,
+        )
+    if config.model_type == "gru":
+        return GRUBaseline(vocab_size, config.dim, config.num_encoder_layers)
     return RLTModel(
-        vocab_size=3 if config.task == "parity" else 5,
+        vocab_size=vocab_size,
         dim=config.dim,
         num_encoder_layers=config.num_encoder_layers,
         num_decoder_layers=config.num_decoder_layers,
@@ -156,8 +188,12 @@ class Diagnostics:
 
 
 @contextmanager
-def diagnostic_hooks(model: RLTModel):
+def diagnostic_hooks(model: torch.nn.Module):
     diagnostics = Diagnostics()
+
+    if not isinstance(model, RLTModel):
+        yield diagnostics
+        return
 
     def record_gate(_module, _inputs, output):
         diagnostics.gate_values.append(output[1].detach())
@@ -183,7 +219,7 @@ def invalid_prediction_rate(logits: torch.Tensor, task: str) -> float:
     return (predictions >= valid_classes).sum().item() / predictions.numel()
 
 
-def evaluate(model: RLTModel, config: TrainConfig) -> dict[str, dict[str, float]]:
+def evaluate(model: torch.nn.Module, config: TrainConfig) -> dict[str, dict[str, float]]:
     was_training = model.training
     model.eval()
     device = next(model.parameters()).device
@@ -214,7 +250,7 @@ def evaluate(model: RLTModel, config: TrainConfig) -> dict[str, dict[str, float]
     return results
 
 
-def _fixed_training_accuracy(model: RLTModel, config: TrainConfig) -> dict[str, float]:
+def _fixed_training_accuracy(model: torch.nn.Module, config: TrainConfig) -> dict[str, float]:
     tokens, labels = make_training_batch(config, 1)
     device = next(model.parameters()).device
     was_training = model.training
@@ -233,7 +269,7 @@ def _fixed_training_accuracy(model: RLTModel, config: TrainConfig) -> dict[str, 
 
 @dataclass
 class TrainResult:
-    model: RLTModel
+    model: torch.nn.Module
     loss_history: list[float]
     eval_history: list[dict]
     diagnostics: list[dict]
@@ -295,8 +331,14 @@ def train(
         diagnostics_history.append({
             "step": step,
             "preclip_grad_norm": grad_norm,
-            "mean_gate": torch.stack([gate.mean() for gate in diagnostics.gate_values]).mean().item(),
-            "mean_state_norm": torch.stack([norm.mean() for norm in diagnostics.state_norms]).mean().item(),
+            "mean_gate": (
+                torch.stack([gate.mean() for gate in diagnostics.gate_values]).mean().item()
+                if diagnostics.gate_values else None
+            ),
+            "mean_state_norm": (
+                torch.stack([norm.mean() for norm in diagnostics.state_norms]).mean().item()
+                if diagnostics.state_norms else None
+            ),
         })
         if step % config.eval_interval == 0 or step == config.steps:
             entry = {"step": step, "lengths": evaluate(model, config)}
@@ -304,10 +346,12 @@ def train(
                 entry["training_set"] = _fixed_training_accuracy(model, config)
             eval_history.append(entry)
         if log_every is not None and step % log_every == 0:
+            mean_gate = diagnostics_history[-1]["mean_gate"]
+            gate_text = "None" if mean_gate is None else f"{mean_gate:.9g}"
             print(
                 f"step={step} loss={loss_history[-1]:.9g} "
                 f"preclip_grad_norm={grad_norm:.9g} lr={step_learning_rate:.9g} "
-                f"mean_gate={diagnostics_history[-1]['mean_gate']:.9g}"
+                f"mean_gate={gate_text}"
             )
 
     output_dir = Path(output_dir)
