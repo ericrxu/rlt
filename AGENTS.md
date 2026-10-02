@@ -291,6 +291,11 @@ and any change must be recorded here.
 | Training dtype | float32 for training runs, float64 in tests. Deterministic algorithms on in both. |
 | Results files | Each run writes `results/<timestamp>_<name>.json`: full config, git commit hash, dirty flag, seed, torch version, parameter count, loss history, eval history, diagnostics. Runs with a dirty flag never go in `RESULTS.md`. |
 | Checkpoints | `checkpoints/`, gitignored, final model only. |
+| Model types | Config field `model_type`: `rlt`, `transformer`, or `gru`. Required, like every field. |
+| Transformer baseline | The Stage 3 causal encoder, then `RMSNorm`, then a bias-free readout. Same blocks and RoPE as RLT. No decoder, no recurrence. |
+| GRU baseline | Embedding, then unidirectional `nn.GRU`, then a bias-free readout. |
+| Parameter matching | Baselines within ±5% of the RLT reference config's parameter count. Compute is not matched; say so when reporting. |
+| Diagnostics for baselines | Gate and state-norm diagnostics exist only for RLT; baselines record them as null. |
 
 ## Known ambiguities — ask, don't guess
 
