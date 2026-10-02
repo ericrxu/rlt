@@ -45,7 +45,7 @@ def _config(model_type: str, task: str = "parity") -> TrainConfig:
         seed=17, eval_seed=701, dim=8, num_encoder_layers=1,
         num_decoder_layers=1, num_heads=2, head_dim=4, window_size=2,
         alpha=0.75, rms_eps=1e-6, train_length=1, batch_size=16,
-        train_programs=16, steps=30, learning_rate=0.03,
+        train_programs=16, curriculum=None, steps=30, learning_rate=0.03,
         min_learning_rate=0.03, warmup_steps=1, weight_decay=0.0,
         grad_clip_norm=1.0, eval_lengths=(1,), eval_programs=4,
         eval_interval=30,
