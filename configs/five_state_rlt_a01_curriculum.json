@@ -1,0 +1,52 @@
+{
+    "name":  "five_state_rlt_a01_curriculum",
+    "task":  "five_state",
+    "model_type":  "rlt",
+    "objective":  "final_state",
+    "seed":  0,
+    "eval_seed":  1000,
+    "dim":  32,
+    "num_encoder_layers":  2,
+    "num_decoder_layers":  2,
+    "num_heads":  2,
+    "head_dim":  16,
+    "window_size":  3,
+    "alpha":  0.1,
+    "rms_eps":  1E-06,
+    "train_length":  32,
+    "batch_size":  64,
+    "train_programs":  null,
+    "curriculum":  [
+                       [
+                           4,
+                           1500
+                       ],
+                       [
+                           8,
+                           1500
+                       ],
+                       [
+                           16,
+                           1500
+                       ],
+                       [
+                           32,
+                           1500
+                       ]
+                   ],
+    "steps":  6000,
+    "learning_rate":  0.003,
+    "min_learning_rate":  0.0003,
+    "warmup_steps":  200,
+    "weight_decay":  0.01,
+    "grad_clip_norm":  1.0,
+    "eval_lengths":  [
+                         32,
+                         48,
+                         64,
+                         96,
+                         128
+                     ],
+    "eval_programs":  2048,
+    "eval_interval":  1500
+}
