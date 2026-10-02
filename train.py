@@ -39,6 +39,7 @@ class TrainConfig:
     batch_size: int
     train_programs: int | None
     curriculum: list[list[int]] | None
+    length_mix: list[int] | None
     steps: int
     learning_rate: float
     min_learning_rate: float
@@ -97,6 +98,21 @@ class TrainConfig:
                 raise ValueError("curriculum stage steps must sum to steps")
             if previous_length != self.train_length:
                 raise ValueError("curriculum must end at train_length")
+        if self.length_mix is not None:
+            if (not isinstance(self.length_mix, list) or not self.length_mix
+                    or any(type(length) is not int or length < 1
+                           for length in self.length_mix)):
+                raise ValueError("length_mix must be a nonempty list of positive lengths")
+            if any(left >= right for left, right in zip(self.length_mix, self.length_mix[1:])):
+                raise ValueError("length_mix must be strictly increasing")
+            if self.length_mix[-1] != self.train_length:
+                raise ValueError("length_mix must end at train_length")
+            if self.batch_size % len(self.length_mix):
+                raise ValueError("batch_size must be divisible by length_mix size")
+            if self.train_programs is not None:
+                raise ValueError("length_mix requires train_programs to be null")
+            if self.curriculum is not None:
+                raise ValueError("length_mix cannot be combined with curriculum")
         for name in ("dim", "num_encoder_layers", "num_decoder_layers", "num_heads",
                      "head_dim", "window_size", "train_length", "batch_size", "steps",
                      "warmup_steps", "eval_programs", "eval_interval"):
@@ -117,6 +133,8 @@ def load_config(path: str | Path) -> TrainConfig:
     data = json.loads(Path(path).read_text(encoding="utf-8"))
     if "curriculum" not in data:
         raise ValueError("curriculum is required")
+    if "length_mix" not in data:
+        raise ValueError("length_mix is required")
     return TrainConfig(**data)
 
 
@@ -181,6 +199,19 @@ def make_training_batch(config: TrainConfig, step: int):
         seed = _derived_seed(0, config.seed, _task_number(config.task))
         count = config.train_programs
     return _batch(config, length, count, seed)
+
+
+def make_training_groups(config: TrainConfig, step: int):
+    if config.length_mix is None:
+        return [make_training_batch(config, step)]
+    if step < 1:
+        raise ValueError("training steps are one-based")
+    count = config.batch_size // len(config.length_mix)
+    return [
+        _batch(config, length, count,
+               _derived_seed(2, config.seed, _task_number(config.task), step, length))
+        for length in config.length_mix
+    ]
 
 
 def make_eval_batch(config: TrainConfig, length: int):
@@ -357,14 +388,24 @@ def train(
     checkpoint_path = checkpoint_dir / f"{stamp}_{config.name}.pt"
     model.train()
     for step in range(1, config.steps + 1):
-        tokens, labels = make_training_batch(config, step)
         optimizer.zero_grad(set_to_none=True)
         with diagnostic_hooks(model) as diagnostics:
-            logits = model(tokens)
-        if config.objective == "per_position":
-            loss = state_tracking_loss(logits, labels)
-        else:
-            loss = final_state_loss(logits, labels)
+            if config.length_mix is None:
+                tokens, labels = make_training_batch(config, step)
+                logits = model(tokens)
+                if config.objective == "per_position":
+                    loss = state_tracking_loss(logits, labels)
+                else:
+                    loss = final_state_loss(logits, labels)
+            else:
+                group_losses = []
+                for tokens, labels in make_training_groups(config, step):
+                    logits = model(tokens)
+                    if config.objective == "per_position":
+                        group_losses.append(state_tracking_loss(logits, labels))
+                    else:
+                        group_losses.append(final_state_loss(logits, labels))
+                loss = torch.stack(group_losses).mean()
         loss.backward()
         grad_norm = clip_gradients(model, config.grad_clip_norm)
         step_learning_rate = optimizer.param_groups[0]["lr"]

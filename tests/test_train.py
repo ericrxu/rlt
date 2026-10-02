@@ -55,7 +55,7 @@ def config():
         dim=4, num_encoder_layers=1, num_decoder_layers=1,
         num_heads=1, head_dim=4, window_size=2, alpha=0.75,
         rms_eps=1e-6, train_length=2, batch_size=16, train_programs=16,
-        curriculum=None,
+        curriculum=None, length_mix=None,
         steps=2, learning_rate=0.01, min_learning_rate=0.001,
         warmup_steps=1, weight_decay=0.01, grad_clip_norm=0.5,
         eval_lengths=(2,), eval_programs=4, eval_interval=2,
