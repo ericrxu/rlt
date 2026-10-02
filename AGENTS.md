@@ -307,6 +307,8 @@ and any change must be recorded here.
 | Experiment 3 | Final-state objective with curriculum `[[4, 1500], [8, 1500], [16, 1500], [32, 1500]]`, 6,000 steps. Otherwise identical to Experiment 2. Models: RLT (α=0.5) and GRU. Results in `results/exp3/`. |
 | Eval checkpoints | `train()` saves a checkpoint at every eval step, named `{stamp}_{name}_step{N}.pt`, in addition to the final one. Saving checkpoints must not change training. |
 | Experiment 4 | RLT only, Experiment 3 curriculum and settings, with `eval_interval: 1500` so evals and checkpoints land on stage ends. Arms: α = 0.5 (should reproduce Experiment 3's loss histories exactly) and α = 0.1 (the authors' feedback scale). Seeds 0, 1, 2. Results in `results/exp4/`. |
+| Length mix | Config field `length_mix`: `null` or a strictly increasing list of lengths. Required. Largest equals `train_length`; `batch_size` divisible by its length; requires `train_programs: null`; cannot be combined with `curriculum`. Each step splits the batch into equal groups, one per length, run separately; loss is the mean over all programs; one optimizer step. With `null`, training is unchanged. Results without the field had `length_mix: null`. `compare.py` refuses to mix values. |
+| Experiment 5 | Final-state objective, `length_mix: [4, 8, 16, 32]`, otherwise identical to Experiment 2. Models: RLT (α=0.5) and GRU. Results in `results/exp5/`. |
 
 ## Known ambiguities — ask, don't guess
 
