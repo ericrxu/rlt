@@ -33,6 +33,8 @@ def compare_results(
     curriculum = unset_curriculum
     unset_length_mix = object()
     length_mix = unset_length_mix
+    unset_length_cycle = object()
+    length_cycle = unset_length_cycle
     for path in paths:
         payload = json.loads(path.read_text(encoding="utf-8"))
         config = payload["config"]
@@ -70,6 +72,11 @@ def compare_results(
             length_mix = result_length_mix
         elif result_length_mix != length_mix:
             raise ValueError("results have different length_mix settings")
+        result_length_cycle = config.get("length_cycle")
+        if length_cycle is unset_length_cycle:
+            length_cycle = result_length_cycle
+        elif result_length_cycle != length_cycle:
+            raise ValueError("results have different length_cycle settings")
 
         key = (config["task"], config["model_type"], config["alpha"])
         seed = payload["seed"]

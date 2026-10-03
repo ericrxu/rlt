@@ -309,6 +309,8 @@ and any change must be recorded here.
 | Experiment 4 | RLT only, Experiment 3 curriculum and settings, with `eval_interval: 1500` so evals and checkpoints land on stage ends. Arms: α = 0.5 (should reproduce Experiment 3's loss histories exactly) and α = 0.1 (the authors' feedback scale). Seeds 0, 1, 2. Results in `results/exp4/`. |
 | Length mix | Config field `length_mix`: `null` or a strictly increasing list of lengths. Required. Largest equals `train_length`; `batch_size` divisible by its length; requires `train_programs: null`; cannot be combined with `curriculum`. Each step splits the batch into equal groups, one per length, run separately; loss is the mean over all programs; one optimizer step. With `null`, training is unchanged. Results without the field had `length_mix: null`. `compare.py` refuses to mix values. |
 | Experiment 5 | Final-state objective, `length_mix: [4, 8, 16, 32]`, otherwise identical to Experiment 2. Models: RLT (α=0.5) and GRU. Results in `results/exp5/`. |
+| Length cycle | Config field `length_cycle`: `null` or a strictly increasing list of lengths. Required. Step s uses `length_cycle[(s - 1) % len(length_cycle)]` for its whole batch. Largest equals `train_length`; requires `train_programs: null`; cannot be combined with `curriculum` or `length_mix`. Batch seeds are unchanged. Results without the field had `length_cycle: null`. `compare.py` refuses to mix values. |
+| Experiment 6 | Final-state objective, `length_cycle: [4, 8, 16, 32]`, otherwise identical to Experiment 5 (3,000 steps, batch 64). Models: RLT (α=0.5) and GRU. Results in `results/exp6/`. |
 
 ## Known ambiguities — ask, don't guess
 
