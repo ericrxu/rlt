@@ -275,3 +275,30 @@ Cutting the feedback drops RLT to chance on every seed.
 (Parity / five-state. Experiment 4 diagnosed Experiment 3 and is not listed.)
 
 **What this shows about RLT:** its attention paths and its recurrence compete. When short programs alone are on offer, attention can solve them, RLT takes that route, and it never learns the recurrence that extrapolates. When long programs are always present, the recurrence is the only route that works, and RLT learns it fully. The GRU has no attention, so it learns the recurrent rule whenever the signal is strong enough. This matches the authors' own practice of training on mixed lengths.
+
+## Long-length evaluation
+
+**Script:** `analysis/eval_long.py` (loads saved final checkpoints; no retraining)
+**Outputs:** `results/long_eval/`
+**Setup:** final-state accuracy on 1,024 test programs per length, at 128, 256, 512, and 1,024.
+
+### Experiment 5 (mixed lengths, final-only)
+
+All RLT and GRU models: 100% at every length on both tasks, except one five-state RLT seed at 99.9% at length 1,024. That is 32× the training length.
+
+### Experiment 1 (fixed length 32, per-position)
+
+| Parity RLT | 128 | 256 | 512 | 1,024 |
+| --- | --- | --- | --- | --- |
+| Seed 0 | 100% | 100% | 100% | 100% |
+| Seed 1 | 100% | 100% | 100% | 100% |
+| Seed 2 | 87.6% | 62.4% | 49.6% | 51.0% |
+
+Five-state RLT and all GRU models: 100% at every length.
+
+### Findings
+
+- **Learned recurrence extrapolates without limit in this range.** Every model that learned the exact rule holds 100% to 32× its training length.
+- **Experiment 1's apparent gradual decline is one failed seed.** Two parity seeds learned the exact rule; one learned an approximate solution that reaches chance by length 512. The mean (83.7% at 1,024) describes no actual model.
+- **Mixed-length training found the exact rule on 3 of 3 parity seeds**, versus 2 of 3 under per-position labels at fixed length. Too few seeds to call this reliable.
+- **Lesson for reporting:** with 3 seeds, report per-seed results, not only means.

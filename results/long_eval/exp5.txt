@@ -1,0 +1,19 @@
+parity_rlt_mixed_final_s0 128: 1.000  256: 1.000  512: 1.000  1024: 1.000
+five_state_rlt_mixed_final_s0 128: 1.000  256: 1.000  512: 1.000  1024: 0.999
+parity_gru_mixed_final_s0 128: 1.000  256: 1.000  512: 1.000  1024: 1.000
+five_state_gru_mixed_final_s0 128: 1.000  256: 1.000  512: 1.000  1024: 1.000
+parity_gru_mixed_final_s1 128: 1.000  256: 1.000  512: 1.000  1024: 1.000
+five_state_gru_mixed_final_s1 128: 1.000  256: 1.000  512: 1.000  1024: 1.000
+parity_gru_mixed_final_s2 128: 1.000  256: 1.000  512: 1.000  1024: 1.000
+five_state_gru_mixed_final_s2 128: 1.000  256: 1.000  512: 1.000  1024: 1.000
+parity_rlt_mixed_final_s1 128: 1.000  256: 1.000  512: 1.000  1024: 1.000
+five_state_rlt_mixed_final_s1 128: 1.000  256: 1.000  512: 1.000  1024: 1.000
+parity_rlt_mixed_final_s2 128: 1.000  256: 1.000  512: 1.000  1024: 1.000
+five_state_rlt_mixed_final_s2 128: 1.000  256: 1.000  512: 1.000  1024: 1.000
+
+Mean over seeds
+                                     128     256     512    1024
+parity_rlt_mixed_final             1.000   1.000   1.000   1.000
+five_state_rlt_mixed_final         1.000   1.000   1.000   1.000
+parity_gru_mixed_final             1.000   1.000   1.000   1.000
+five_state_gru_mixed_final         1.000   1.000   1.000   1.000
