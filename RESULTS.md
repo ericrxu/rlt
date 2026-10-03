@@ -263,7 +263,7 @@ Cutting the feedback drops RLT to chance on every seed.
 - Cutting feedback also shifts the decoder's inputs, so the drop is not by itself proof of reliance; the contrast with Experiment 4 is what makes it convincing.
 - Small models (59K parameters), two synthetic tasks, one learning rate.
 
-## Summary of Experiments 1–5
+## Summary of Experiments 1–6* (Experiment 6 performed after)
 
 | | Supervision | Lengths | RLT at 128 | GRU at 128 |
 | --- | --- | --- | --- | --- |
@@ -271,10 +271,11 @@ Cutting the feedback drops RLT to chance on every seed.
 | Exp 2 | Final only | Fixed 32 | Chance | Chance |
 | Exp 3 | Final only | Curriculum 4→32 | Chance | 100% / 100% |
 | Exp 5 | Final only | Mixed 4–32, every step | 100% / 100% | 100% / 100% |
+| Exp 6 | Final only | Interleaved 4–32, one per step | 100% / 100% | 100% / 100% |
 
 (Parity / five-state. Experiment 4 diagnosed Experiment 3 and is not listed.)
 
-**What this shows about RLT:** its attention paths and its recurrence compete. When short programs alone are on offer, attention can solve them, RLT takes that route, and it never learns the recurrence that extrapolates. When long programs are always present, the recurrence is the only route that works, and RLT learns it fully. The GRU has no attention, so it learns the recurrent rule whenever the signal is strong enough. This matches the authors' own practice of training on mixed lengths.
+**What this shows about RLT:** its attention paths and its recurrence compete. When short programs alone are on offer, attention can solve them, RLT takes that route, and it never learns the recurrence that extrapolates. When long programs are always present, the recurrence is the only route that works, and RLT learns it fully. The GRU has no attention, so it learns the recurrent rule whenever the signal is strong enough. This matches the authors' own practice of training on mixed lengths. When long programs appear frequently, whether mixed into every step or interleaved every few steps, the recurrence is the only route that works, and RLT learns it fully.
 
 ## Long-length evaluation
 
@@ -302,3 +303,50 @@ Five-state RLT and all GRU models: 100% at every length.
 - **Experiment 1's apparent gradual decline is one failed seed.** Two parity seeds learned the exact rule; one learned an approximate solution that reaches chance by length 512. The mean (83.7% at 1,024) describes no actual model.
 - **Mixed-length training found the exact rule on 3 of 3 parity seeds**, versus 2 of 3 under per-position labels at fixed length. Too few seeds to call this reliable.
 - **Lesson for reporting:** with 3 seeds, report per-seed results, not only means.
+
+## Experiment 6 — interleaved lengths
+
+**Commit:** d084657179c6789ff3b9e43280f873fa611927e0
+**Date:** 2026-10-03
+**Results:** `results/exp6/` (12 runs, all clean); reproduction check in `results/exp6_repro/`; long-length evaluation in `results/long_eval/exp6.txt`
+
+### Question
+
+Experiment 5's mixed lengths changed two things at once: lengths shared each gradient step, and long programs appeared constantly. Which one prevents the collapse?
+
+### Setup
+
+Final-state objective, `length_cycle: [4, 8, 16, 32]`: each step uses one length for its whole batch, cycling 4, 8, 16, 32, 4, … No step mixes lengths. Otherwise identical to Experiment 5: 3,000 steps, batch 64, 48,000 programs per length, 192,000 total. RLT (α = 0.5) and GRU, seeds 0, 1, 2.
+
+### Reproduction check
+
+Experiment 1's `parity_gru` seed 0 loss history reproduces bit for bit.
+
+### Results
+
+- **RLT:** 100% at lengths 32–96 on both tasks; five-state 100% at 128; parity 99.98% at 128 (one seed 99.95%).
+- **GRU:** 100% at every length on both tasks.
+- All runs end with training loss at 0, including the final step at length 32.
+
+**Feedback cut on the final models:** every RLT model drops to chance (parity 44–56%, five-state 18–21%, at lengths 32 and 128). RLT relies on its recurrence.
+
+**Long-length evaluation (RLT parity):**
+
+| Seed | 128 | 256 | 512 | 1,024 |
+| --- | --- | --- | --- | --- |
+| 0 | 100% | 100% | 100% | 100% |
+| 1 | 99.9% | 98.5% | 97.8% | 98.6% |
+| 2 | 100% | 100% | 97.9% | 94.0% |
+
+Five-state RLT and all GRU models: 99.8–100% at every length to 1,024.
+
+### Findings
+
+- **Interleaving prevents the collapse.** Mixing lengths within a step is not required. What broke RLT in Experiment 3 was long stretches of short-only training, which let the shortcut take over; seeing long programs every few steps is enough.
+- **Within-step mixing may help slightly at extreme lengths.** Experiment 5 held 100% on parity at 1,024 for all three seeds; here two seeds slipped to 94–99%. With 3 seeds and differences of a few percent, this is a lead, not a finding.
+- **Refined conclusion:** RLT fails when it trains for long stretches on short programs only; frequent exposure to long programs is enough to prevent it.
+
+### Caveats
+
+- One cycle order (short to long) and one cycle length; a different order or a longer cycle period was not tested.
+- 3 seeds, small models, two synthetic tasks.
