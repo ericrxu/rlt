@@ -218,3 +218,60 @@ Accuracy one stage ahead, before training on it: parity at length 8 was 37–67%
 - One curriculum schedule and learning rate.
 - Small models (59K parameters); the authors' models are ~450× larger.
 - "No change when feedback is cut" shows the recurrence wasn't needed for those answers, not that it carried no information.
+
+## Experiment 5 — mixed-length training
+
+**Commit:** 44c14c4da6930034603a984fc22c0f049b6f8235
+**Date:** 2026-10-03
+**Results:** `results/exp5/` (12 runs, all clean); reproduction check in `results/exp5_repro/`; analysis in `analysis/ablate_final.py`
+
+### Question
+
+Experiment 4 concluded that RLT collapses under a curriculum because it learns a short-length shortcut instead of its recurrence. Prediction: if every training step contains long and short programs together, no shortcut can succeed on its own, and RLT should not collapse.
+
+### Setup
+
+Final-state objective, `length_mix: [4, 8, 16, 32]`: each step's batch of 64 is split into four groups of 16, one per length, run separately; loss is the mean over all programs; one optimizer step. Otherwise identical to Experiment 2 (3,000 steps, 192,000 training programs). RLT (α = 0.5) and GRU, seeds 0, 1, 2.
+
+### Reproduction check
+
+The rewritten training loop reproduces Experiment 1's `parity_gru` seed 0 loss history bit for bit (3,000 steps).
+
+### Results
+
+Final-state accuracy: **100% at every length (32–128), every seed, both tasks, both models.** All runs end with training loss at 0.
+
+### Feedback cut on the final models
+
+| Task | Feedback on (32 / 128) | Feedback cut (32 / 128) |
+| --- | --- | --- |
+| Parity, 3 seeds | 100% / 100% | 48–50% / 53–56% |
+| Five-state, 3 seeds | 100% / 100% | 18–19% / 19–20% |
+
+Cutting the feedback drops RLT to chance on every seed.
+
+### Findings
+
+- **The prediction held.** With mixed lengths in every step, RLT learns from final answers alone and generalizes to 4× the training length.
+- **RLT now relies entirely on its recurrence**, the opposite of Experiment 4, where cutting feedback before the collapse had no effect.
+- **Order, not exposure, is what mattered.** Experiments 3 and 5 use the same lengths and objective; Experiment 5 uses half the training programs. Sequential stages trap RLT in a shortcut; simultaneous lengths do not.
+- **Mixed lengths beat dense labels for extrapolation.** RLT reaches 100% on parity at length 128 here, versus 95.6% in Experiment 1 with per-position labels at fixed length 32.
+
+### Caveats
+
+- Mixed-length training changes more than ordering: every step also sees more length diversity. Length diversity alone may contribute to the improved extrapolation.
+- Cutting feedback also shifts the decoder's inputs, so the drop is not by itself proof of reliance; the contrast with Experiment 4 is what makes it convincing.
+- Small models (59K parameters), two synthetic tasks, one learning rate.
+
+## Summary of Experiments 1–5
+
+| | Supervision | Lengths | RLT at 128 | GRU at 128 |
+| --- | --- | --- | --- | --- |
+| Exp 1 | Every position | Fixed 32 | 95.6% / 100% | 100% / 100% |
+| Exp 2 | Final only | Fixed 32 | Chance | Chance |
+| Exp 3 | Final only | Curriculum 4→32 | Chance | 100% / 100% |
+| Exp 5 | Final only | Mixed 4–32, every step | 100% / 100% | 100% / 100% |
+
+(Parity / five-state. Experiment 4 diagnosed Experiment 3 and is not listed.)
+
+**What this shows about RLT:** its attention paths and its recurrence compete. When short programs alone are on offer, attention can solve them, RLT takes that route, and it never learns the recurrence that extrapolates. When long programs are always present, the recurrence is the only route that works, and RLT learns it fully. The GRU has no attention, so it learns the recurrent rule whenever the signal is strong enough. This matches the authors' own practice of training on mixed lengths.
