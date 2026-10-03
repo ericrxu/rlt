@@ -17,6 +17,7 @@
     "batch_size":  64,
     "train_programs":  null,
     "length_mix": null,
+    "length_cycle": null,
     "curriculum": null,
     "steps":  3000,
     "learning_rate":  0.003,

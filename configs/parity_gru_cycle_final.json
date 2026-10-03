@@ -1,5 +1,5 @@
 {
-    "name":  "parity_gru_mixed_final",
+    "name":  "parity_gru_cycle_final",
     "task":  "parity",
     "model_type":  "gru",
     "objective": "final_state",
@@ -16,8 +16,8 @@
     "train_length":  32,
     "batch_size":  64,
     "train_programs":  null,
-    "length_mix": [4, 8, 16, 32],
-    "length_cycle": null,
+    "length_mix": null,
+    "length_cycle": [4, 8, 16, 32],
     "curriculum": null,
     "steps":  3000,
     "learning_rate":  0.003,

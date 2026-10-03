@@ -40,6 +40,7 @@ class TrainConfig:
     train_programs: int | None
     curriculum: list[list[int]] | None
     length_mix: list[int] | None
+    length_cycle: list[int] | None
     steps: int
     learning_rate: float
     min_learning_rate: float
@@ -113,6 +114,21 @@ class TrainConfig:
                 raise ValueError("length_mix requires train_programs to be null")
             if self.curriculum is not None:
                 raise ValueError("length_mix cannot be combined with curriculum")
+        if self.length_cycle is not None:
+            if (not isinstance(self.length_cycle, list) or not self.length_cycle
+                    or any(type(length) is not int or length < 1
+                           for length in self.length_cycle)):
+                raise ValueError("length_cycle must be a nonempty list of positive lengths")
+            if any(left >= right for left, right in zip(self.length_cycle, self.length_cycle[1:])):
+                raise ValueError("length_cycle must be strictly increasing")
+            if self.length_cycle[-1] != self.train_length:
+                raise ValueError("length_cycle must end at train_length")
+            if self.train_programs is not None:
+                raise ValueError("length_cycle requires train_programs to be null")
+            if self.curriculum is not None:
+                raise ValueError("length_cycle cannot be combined with curriculum")
+            if self.length_mix is not None:
+                raise ValueError("length_cycle cannot be combined with length_mix")
         for name in ("dim", "num_encoder_layers", "num_decoder_layers", "num_heads",
                      "head_dim", "window_size", "train_length", "batch_size", "steps",
                      "warmup_steps", "eval_programs", "eval_interval"):
@@ -135,6 +151,8 @@ def load_config(path: str | Path) -> TrainConfig:
         raise ValueError("curriculum is required")
     if "length_mix" not in data:
         raise ValueError("length_mix is required")
+    if "length_cycle" not in data:
+        raise ValueError("length_cycle is required")
     return TrainConfig(**data)
 
 
@@ -185,6 +203,8 @@ def make_training_batch(config: TrainConfig, step: int):
     if step < 1:
         raise ValueError("training steps are one-based")
     length = config.train_length
+    if config.length_cycle is not None:
+        length = config.length_cycle[(step - 1) % len(config.length_cycle)]
     if config.curriculum is not None:
         end_step = 0
         for stage_length, stage_steps in config.curriculum:
