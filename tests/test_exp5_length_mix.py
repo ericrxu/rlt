@@ -33,7 +33,7 @@ def deterministic_float64():
 def config_data():
     data = json.loads((CONFIG_DIR / "parity_rlt_final.json").read_text(encoding="utf-8"))
     return data | {
-        "name": "length_mix_test", "length_mix": None,
+        "name": "length_mix_test", "length_mix": None, "length_cycle": None,
         "dim": 4, "num_encoder_layers": 1, "num_decoder_layers": 1,
         "num_heads": 1, "head_dim": 4, "window_size": 2,
         "train_length": 2, "batch_size": 4, "train_programs": None,
