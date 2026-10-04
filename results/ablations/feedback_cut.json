@@ -1,0 +1,218 @@
+[
+  {
+    "group": "Curriculum, \u03b1 = 0.5\n(before collapse)",
+    "task": "parity",
+    "seed": 0,
+    "alpha": 0.5,
+    "length": 4,
+    "feedback_on": 1.0,
+    "feedback_cut": 1.0
+  },
+  {
+    "group": "Curriculum, \u03b1 = 0.5\n(before collapse)",
+    "task": "parity",
+    "seed": 1,
+    "alpha": 0.5,
+    "length": 4,
+    "feedback_on": 1.0,
+    "feedback_cut": 1.0
+  },
+  {
+    "group": "Curriculum, \u03b1 = 0.5\n(before collapse)",
+    "task": "parity",
+    "seed": 2,
+    "alpha": 0.5,
+    "length": 4,
+    "feedback_on": 1.0,
+    "feedback_cut": 0.697265625
+  },
+  {
+    "group": "Curriculum, \u03b1 = 0.5\n(before collapse)",
+    "task": "five_state",
+    "seed": 0,
+    "alpha": 0.5,
+    "length": 8,
+    "feedback_on": 1.0,
+    "feedback_cut": 0.927734375
+  },
+  {
+    "group": "Curriculum, \u03b1 = 0.5\n(before collapse)",
+    "task": "five_state",
+    "seed": 1,
+    "alpha": 0.5,
+    "length": 8,
+    "feedback_on": 1.0,
+    "feedback_cut": 0.935546875
+  },
+  {
+    "group": "Curriculum, \u03b1 = 0.5\n(before collapse)",
+    "task": "five_state",
+    "seed": 2,
+    "alpha": 0.5,
+    "length": 8,
+    "feedback_on": 1.0,
+    "feedback_cut": 0.94921875
+  },
+  {
+    "group": "Curriculum, \u03b1 = 0.1\n(before collapse)",
+    "task": "parity",
+    "seed": 0,
+    "alpha": 0.1,
+    "length": 4,
+    "feedback_on": 1.0,
+    "feedback_cut": 1.0
+  },
+  {
+    "group": "Curriculum, \u03b1 = 0.1\n(before collapse)",
+    "task": "parity",
+    "seed": 1,
+    "alpha": 0.1,
+    "length": 4,
+    "feedback_on": 1.0,
+    "feedback_cut": 1.0
+  },
+  {
+    "group": "Curriculum, \u03b1 = 0.1\n(before collapse)",
+    "task": "parity",
+    "seed": 2,
+    "alpha": 0.1,
+    "length": 4,
+    "feedback_on": 1.0,
+    "feedback_cut": 1.0
+  },
+  {
+    "group": "Curriculum, \u03b1 = 0.1\n(before collapse)",
+    "task": "five_state",
+    "seed": 0,
+    "alpha": 0.1,
+    "length": 8,
+    "feedback_on": 1.0,
+    "feedback_cut": 0.990234375
+  },
+  {
+    "group": "Curriculum, \u03b1 = 0.1\n(before collapse)",
+    "task": "five_state",
+    "seed": 1,
+    "alpha": 0.1,
+    "length": 8,
+    "feedback_on": 1.0,
+    "feedback_cut": 1.0
+  },
+  {
+    "group": "Curriculum, \u03b1 = 0.1\n(before collapse)",
+    "task": "five_state",
+    "seed": 2,
+    "alpha": 0.1,
+    "length": 8,
+    "feedback_on": 1.0,
+    "feedback_cut": 1.0
+  },
+  {
+    "group": "Mixed lengths\n(Exp 5, final)",
+    "task": "parity",
+    "seed": 0,
+    "alpha": 0.5,
+    "length": 32,
+    "feedback_on": 1.0,
+    "feedback_cut": 0.48828125
+  },
+  {
+    "group": "Mixed lengths\n(Exp 5, final)",
+    "task": "parity",
+    "seed": 1,
+    "alpha": 0.5,
+    "length": 32,
+    "feedback_on": 1.0,
+    "feedback_cut": 0.49609375
+  },
+  {
+    "group": "Mixed lengths\n(Exp 5, final)",
+    "task": "parity",
+    "seed": 2,
+    "alpha": 0.5,
+    "length": 32,
+    "feedback_on": 1.0,
+    "feedback_cut": 0.482421875
+  },
+  {
+    "group": "Mixed lengths\n(Exp 5, final)",
+    "task": "five_state",
+    "seed": 0,
+    "alpha": 0.5,
+    "length": 32,
+    "feedback_on": 1.0,
+    "feedback_cut": 0.19140625
+  },
+  {
+    "group": "Mixed lengths\n(Exp 5, final)",
+    "task": "five_state",
+    "seed": 1,
+    "alpha": 0.5,
+    "length": 32,
+    "feedback_on": 1.0,
+    "feedback_cut": 0.18359375
+  },
+  {
+    "group": "Mixed lengths\n(Exp 5, final)",
+    "task": "five_state",
+    "seed": 2,
+    "alpha": 0.5,
+    "length": 32,
+    "feedback_on": 1.0,
+    "feedback_cut": 0.177734375
+  },
+  {
+    "group": "Interleaved\n(Exp 6, final)",
+    "task": "parity",
+    "seed": 0,
+    "alpha": 0.5,
+    "length": 32,
+    "feedback_on": 1.0,
+    "feedback_cut": 0.505859375
+  },
+  {
+    "group": "Interleaved\n(Exp 6, final)",
+    "task": "parity",
+    "seed": 1,
+    "alpha": 0.5,
+    "length": 32,
+    "feedback_on": 1.0,
+    "feedback_cut": 0.50390625
+  },
+  {
+    "group": "Interleaved\n(Exp 6, final)",
+    "task": "parity",
+    "seed": 2,
+    "alpha": 0.5,
+    "length": 32,
+    "feedback_on": 1.0,
+    "feedback_cut": 0.517578125
+  },
+  {
+    "group": "Interleaved\n(Exp 6, final)",
+    "task": "five_state",
+    "seed": 0,
+    "alpha": 0.5,
+    "length": 32,
+    "feedback_on": 1.0,
+    "feedback_cut": 0.20703125
+  },
+  {
+    "group": "Interleaved\n(Exp 6, final)",
+    "task": "five_state",
+    "seed": 1,
+    "alpha": 0.5,
+    "length": 32,
+    "feedback_on": 1.0,
+    "feedback_cut": 0.1796875
+  },
+  {
+    "group": "Interleaved\n(Exp 6, final)",
+    "task": "five_state",
+    "seed": 2,
+    "alpha": 0.5,
+    "length": 32,
+    "feedback_on": 1.0,
+    "feedback_cut": 0.1953125
+  }
+]
