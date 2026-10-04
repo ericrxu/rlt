@@ -5,7 +5,8 @@ sys.path.insert(0, os.getcwd())
 import torch
 from train import TrainConfig, build_model, evaluate
 
-DEFAULTS = {"objective": "per_position", "curriculum": None, "length_mix": None}
+DEFAULTS = {"objective": "per_position", "curriculum": None, "length_mix": None,
+            "length_cycle": None}
 LENGTHS = (128, 256, 512, 1024)
 
 results_dir, checkpoint_dir = sys.argv[1], sys.argv[2]
