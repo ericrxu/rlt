@@ -4,6 +4,7 @@ An independent implementation of the **Recurrent Looped Transformer** (Zhang, Fe
 
 - **Paper and project page:** [github.com/yifanzhang-pro/recurrent-looped-tranformer](https://github.com/yifanzhang-pro/recurrent-looped-tranformer)
 - **Full experimental record:** [`RESULTS.md`](RESULTS.md)
+- **Report:** [`REPORT.md`](REPORT.md)
 - **Design decisions and invariants:** [`AGENTS.md`](AGENTS.md)
 
 ## Headline finding
