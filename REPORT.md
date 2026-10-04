@@ -2,7 +2,7 @@
 
 *An independent implementation and six length-generalization experiments*
 
-**Eric Xu** · October 2026 · Code and full results: this repository
+**[Your name]** · October 2026 · Code and full results: this repository
 
 ## Abstract
 
