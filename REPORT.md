@@ -14,18 +14,25 @@ RLT (Zhang, Feng & Qin, 2026) adds a recurrent path to an encoder–decoder tran
 
 The recurrent state has two parts: the decoder output `s_t`, fed back through the merge, and the per-layer sliding-window caches. In this report, **feedback** means the first part only. Our ablations remove the feedback and leave the caches and memory intact.
 
-We set out to test whether RLT's recurrence delivers length generalization on tasks that require tracking state. The main finding concerns learning rather than capacity. RLT has attention paths that can solve short programs without feedback, and depending on the training schedule, it either learns a solution that requires its feedback or one that does not.
+We test whether RLT's recurrence delivers length generalization on state-tracking tasks, and how supervision and the training length schedule affect the solutions it learns.
 
 Our contributions:
 
 - A from-scratch implementation verified against the report's serving-split invariance, full-state causality, and two-gradient-path analysis, with bit-for-bit reproducible training.
 - A controlled comparison against RLT with α = 0, a transformer, and a GRU, matched in parameter count (not compute).
 - Checkpoint ablations showing that RLT's collapse under a curriculum is preceded by solutions that do not require its feedback.
-- A prediction from that observation, tested and confirmed, and a control that narrows what prevents the collapse.
+- Mixed-length and interleaved training that avoid the curriculum collapse and produce models whose accuracy drops to chance when feedback is removed.
 
 ## 2. Implementation and verification
 
-<!-- Figure: architecture diagram (results/figures/architecture.png) goes here once drawn. -->
+> **Hand-drawn architecture diagram — reserved space.**
+>
+> Insert the diagram here when ready.
+
+<!-- Replace the placeholder above with this image when the drawing is ready:
+![Hand-drawn RLT architecture](results/figures/architecture.png)
+Caption: At position t, the merge combines encoder output e_t with the previous decoder output s_{t−1}. Each decoder layer applies sliding-window attention, cross-attention to encoder memory M_{≤t}, then an FFN. The next token inherits both s_t and the per-layer decoder caches.
+-->
 
 The model follows the report's specification: a causal encoder with RoPE at explicit absolute positions; encoder-derived memory restricted to the current prefix; a gated merge, `u_t = e_t + α · g_t ⊙ W_s · RMSNorm(s_{t−1})`; and a decoder applying sliding-window self-attention, cross-attention to memory, and a feed-forward block in that order, with state initialized from a learned `s*`. The decoder runs strictly sequentially, and training uses full backpropagation through time.
 
@@ -38,7 +45,7 @@ Every component was written test-first. The final suite has 392 tests, including
 
 ## 3. Experimental setup
 
-**Tasks.** A program is a sequence of binary operations applied to a hidden state that starts at 0; length counts operations, excluding the beginning-of-sequence token. In **parity**, operation 1 flips the state and operation 0 keeps it. In **five-state**, operation 0 swaps states 0 and 1, and operation 1 rotates all five states by one. Order does not matter for parity but does for five-state, whose two operations generate every permutation of five states (the group S5). Chance is 50% for parity and 20% for five-state.
+**Tasks.** A program is a sequence of binary operations sampled independently with equal probability, applied to a hidden state that starts at 0; length counts operations, excluding the beginning-of-sequence token. In **parity**, operation 1 flips the state and operation 0 keeps it. In **five-state**, operation 0 swaps states 0 and 1, and operation 1 rotates all five states by one. Order does not matter for parity but does for five-state, whose two operations generate every permutation of five states (the group S5). Chance is 50% for parity and 20% for five-state.
 
 **Table 1.** A worked example: operations `1, 1, 0, 1`, starting from state 0.
 
@@ -54,11 +61,11 @@ The model reads `BOS, 1, 1, 0, 1`; its output after each operation is scored aga
 
 **Models.** RLT with width 32, 2 encoder and 2 decoder layers, window 3, one memory group, and α = 0.5 (59,040 parameters on parity). Baselines are matched in parameter count within 5%: RLT with α = 0 (identical, with feedback off), a 3-layer transformer of width 40, and a 1-layer GRU of width 98. **Compute is not matched**: RLT's sequential decoder makes each training step several times slower than the GRU's.
 
-**Training.** AdamW, learning rate 0.003 with 200 warmup steps and cosine decay to 0.0003, weight decay 0.01, gradient clipping at 1.0, batch size 64, fresh programs every step, maximum training length 32, seeds 0, 1, and 2. Runs take 3,000 steps unless noted. All settings were fixed before the first experiment and never tuned.
+**Training.** AdamW, learning rate 0.003 with 200 warmup steps and cosine decay to 0.0003, weight decay 0.01, gradient clipping at 1.0, batch size 64, fresh programs every step, maximum training length 32, seeds 0, 1, and 2. Runs take 3,000 steps unless noted. Model sizes and optimizer settings were fixed before Experiment 1; later experiments changed supervision, length schedules, duration, or α as described below.
 
-**Objective.** We train on state labels, per-position or final-only, rather than the report's next-token objective, since the next input token in these tasks is random and next-token loss cannot distinguish architectures.
+**Objective.** We train on state labels, per-position or final-only, rather than the report's next-token objective, since the next operation is independent of the preceding state. Loss is averaged over supervised positions within each program, then equally over programs.
 
-**Evaluation and selection.** Every model is evaluated on the same held-out programs: 2,048 per length at 32, 48, 64, 96, and 128, and 1,024 per length at 256, 512, and 1,024. **All reported accuracies come from the final checkpoint**, except in Experiment 4, which evaluates checkpoints at the stage boundaries fixed in its design. Results at lengths above 32 never influenced hyperparameters. The sequence of experiments was adaptive: each was designed after seeing the previous results.
+**Evaluation and selection.** Main evaluations use the same held-out programs for every model: 2,048 per length at 32, 48, 64, 96, and 128. Extended evaluations of the feedback-enabled RLT and GRU conditions in Experiments 1, 5, and 6 use 1,024 per length at 256, 512, and 1,024; the transformer and α = 0 baseline stop at 128. Figure 3's feedback ablations use 512 programs per condition. **Reported accuracies use final checkpoints**, except for the stage checkpoints in Experiment 4. Results above length 32 were not used to tune model or optimizer settings. The experiments were designed adaptively after seeing earlier results.
 
 ## 4. Results
 
@@ -66,15 +73,15 @@ The model reads `BOS, 1, 1, 0, 1`; its output after each operation is scored aga
 
 ![Length generalization](results/figures/length_generalization.png)
 
-**Figure 1.** Final-state accuracy versus program length; the maximum training length is 32 (dashed line). Thick lines are means over 3 seeds; thin lines are individual seeds. On parity, Experiment 1's RLT average (orange) hides a split: two seeds stay at 100% while one falls to chance by length 512. On five-state, all RLT variants and the GRU overlap near 100%. The transformer and α = 0 were not evaluated past 128.
+**Figure 1.** Final-state accuracy versus program length; the maximum training length is 32 (dashed line). Thick lines are means over 3 seeds; thin lines are individual seeds. On parity, Experiment 1's RLT average (orange) hides a split: two seeds stay at 100% while one falls to chance by length 512. On five-state, the feedback-enabled RLT conditions and the GRU overlap near 100%. The transformer and α = 0 were not evaluated past 128.
 
 With per-position supervision at fixed length 32, RLT reaches 95.6% on parity and 100% on five-state at length 128. RLT with α = 0, the same model with feedback off, falls to chance on parity as soon as programs exceed the training length, and is at chance on five-state even at length 32. The transformer fits parity at length 32 (98.5%) but drops to chance at 48, and never learns five-state, consistent with the expected difficulty of the S5 word problem for fixed-depth transformers. The GRU scores 100% throughout.
 
-RLT's parity average conceals a split between seeds: two generalize perfectly on every length evaluated, up to 1,024, while the third is at 87.6% at length 128 and at chance by 512.
+The weaker parity seed scores 87.6% at length 128; the other two remain perfect up to 1,024.
 
 ### 4.2 Final-answer supervision fails at this budget (Experiment 2)
 
-With only the final state supervised, RLT and the GRU both end at chance on both tasks, even at length 32. A positive control rules out a broken training path: at length 4, both learn final-only parity to 100%. At length 32, a single label per program is too weak a signal at this budget.
+With only the final state supervised, RLT and the GRU both end at chance on both tasks, even at length 32. A positive control shows that both can learn final-only parity at length 4, reaching 100%. Neither learns at fixed length 32 under this training budget.
 
 In that control, the GRU generalized from length 4 to length 8 at 100%, correct at every intermediate position. RLT reached 74.6% at length 8.
 
@@ -106,13 +113,13 @@ We reran the curriculum with checkpoints at every stage boundary, at α = 0.5 an
 
 In five of six parity runs, removing the feedback at the checkpoint before the collapse changed nothing. On five-state, it reduced accuracy to 92.8–94.9% at α = 0.5 and 99.0–100% at α = 0.1. These solutions did not extend: before any training on longer programs, parity scored 37–67% at length 8, and five-state 20–24% at length 16.
 
-These results support the following account. When only short programs are available, RLT's attention paths solve them, and the solution it learns does not require its feedback. When the length increases, that solution fails, and the model collapses to a constant answer. A GRU has no attention paths and no such alternative.
+The ablations support an attention-shortcut explanation: before the collapse, most short-program accuracy survives without feedback, but those solutions fail on longer programs. They do not identify which attention path carries the solution or establish why training fails to recover.
 
-The evidence for this account is stronger than the evidence against alternatives. Two α values do not exclude every form of feedback or optimization instability. The state-norm growth occurs at both α values and in models that did not need their feedback, and the feedback passes through an RMSNorm before the merge, which removes its scale; this makes the growth more likely a symptom of the collapse than its cause, but does not prove it.
+Two α values do not rule out feedback or optimization instability. State-norm growth occurs at both values, including in models whose accuracy barely changes without feedback. The feedback is normalized before the merge, so raw state-norm growth alone does not establish the cause of collapse.
 
 ### 4.5 A prediction: mixed lengths prevent the collapse (Experiment 5)
 
-If short-length solutions that do not require feedback cause the collapse, then training in which long programs are always present should prevent it. We split each batch of 64 into four groups of 16 at lengths 4, 8, 16, and 32, ran each separately, and took one optimizer step on the mean loss, for 3,000 steps and 192,000 programs.
+The shortcut explanation motivated a prediction: keeping long programs present throughout training should avoid the collapse. We split each batch of 64 into four groups of 16 at lengths 4, 8, 16, and 32, ran each separately, and took one optimizer step on the loss averaged equally over all 64 programs, for 3,000 steps and 192,000 programs.
 
 The prediction held. RLT reached 100% at every length from 32 to 128 on both tasks and every seed, from final answers alone, and stayed at 100% up to length 1,024 except for one five-state seed at 99.9%. Removing its feedback now drops accuracy to chance on every seed (Figure 3): the feedback is necessary for these trained models. This does not show that the memory and window caches contribute nothing.
 
@@ -136,7 +143,7 @@ This control does not isolate the full cause of the curriculum's failure. The cu
 
 ## 5. Discussion
 
-**RLT's alternatives.** RLT's encoder memory and window caches are usually described as context for the decoder. Our results show they also give the optimizer a route that does not require the feedback. On short programs that route works, gradient descent takes it, and the resulting solution fails on longer programs. When long programs appear often, solutions that need the feedback are the ones that succeed. The GRU, with no alternative route, learned the task whenever the training signal was strong enough.
+**RLT's alternatives.** The results are consistent with attention paths offering a short-program solution that need not use hidden-state feedback. Mixed and interleaved training instead yield models that generalize to longer programs and fail when feedback is removed. This contrast supports the shortcut explanation, but does not establish the optimizer's route or exclude other causes of curriculum failure. The GRU has no attention path and succeeds under all three length schedules.
 
 **Relation to the authors' experiments.** The authors' depth-eight results agree with ours where they overlap: their [5+3 and 7+1 splits hold 100% on parity at 256 bits](https://yifanzhang-pro.github.io/recurrent-looped-tranformer/#experiments) while a transformer is near chance. Several of their settings bear on our findings. In their [sixteen-layer runs](https://yifanzhang-pro.github.io/recurrent-looped-tranformer/#depth16), parity training uses mixed lengths 3–40, which by our results should prevent short-length solutions from dominating. They report the checkpoint with the lowest in-distribution validation loss, which would not show a later collapse. They use feedback scale 0.1, which in our setting neither caused nor prevented the collapse. Their models are about 450 times larger than ours.
 
@@ -164,7 +171,7 @@ This control does not isolate the full cause of the curriculum's failure. The cu
 
 ## 7. Reproducibility
 
-Every run's results file records its configuration, commit, and whether the repository was clean, and the comparison script refuses to aggregate runs that differ in commit, settings, or evaluation set. Training is deterministic on one CPU thread. Each experiment reruns with one command per configuration; see the README.
+Every run's results file records its configuration, commit, and whether the repository was clean, and the comparison script refuses to aggregate runs that differ in commit, settings, or evaluation set. Training is deterministic on one CPU thread. The [README](README.md#reproducing-an-experiment) lists training configurations and commands for extended evaluation, feedback ablation, and all three figures.
 
 ## References
 
