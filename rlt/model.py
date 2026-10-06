@@ -5,12 +5,12 @@ from dataclasses import dataclass
 import torch
 from torch import nn
 
-from decoder import Decoder
-from encoder import Encoder, EncoderCache
-from layers import RMSNorm
-from memory import Memory, MemoryCache
-from merge import Merge
-from window_cache import WindowCache
+from .decoder import Decoder
+from .encoder import Encoder, EncoderCache
+from .layers import RMSNorm
+from .memory import Memory, MemoryCache
+from .merge import Merge
+from .window_cache import WindowCache
 
 
 @dataclass(frozen=True)

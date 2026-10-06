@@ -25,15 +25,6 @@ Our contributions:
 
 ## 2. Implementation and verification
 
-> **Hand-drawn architecture diagram — reserved space.**
->
-> Insert the diagram here when ready.
-
-<!-- Replace the placeholder above with this image when the drawing is ready:
-![Hand-drawn RLT architecture](results/figures/architecture.png)
-Caption: At position t, the merge combines encoder output e_t with the previous decoder output s_{t−1}. Each decoder layer applies sliding-window attention, cross-attention to encoder memory M_{≤t}, then an FFN. The next token inherits both s_t and the per-layer decoder caches.
--->
-
 The model follows the report's specification: a causal encoder with RoPE at explicit absolute positions; encoder-derived memory restricted to the current prefix; a gated merge, `u_t = e_t + α · g_t ⊙ W_s · RMSNorm(s_{t−1})`; and a decoder applying sliding-window self-attention, cross-attention to memory, and a feed-forward block in that order, with state initialized from a learned `s*`. The decoder runs strictly sequentially, and training uses full backpropagation through time.
 
 Every component was written test-first. The final suite has 392 tests, including:

@@ -3,9 +3,9 @@
 import torch
 from torch import nn
 
-from layers import Attention, FFN, RMSNorm, apply_rope
-from memory import Memory, MemoryCache, MemoryGroup
-from window_cache import WindowCache
+from .layers import Attention, FFN, RMSNorm, apply_rope
+from .memory import Memory, MemoryCache, MemoryGroup
+from .window_cache import WindowCache
 
 
 class DecoderLayer(nn.Module):

@@ -9,6 +9,8 @@ A from-scratch implementation of the **Recurrent Looped Transformer** (Zhang, Fe
 
 ## What is RLT?
 
+![RLT architecture overview showing the causal encoder, prefix memory, gated merge, recurrent decoder, readout, and carried decoder caches](results/figures/architecture_overview.png)
+
 RLT combines a causal transformer encoder with a decoder that processes tokens sequentially. At each position, a gated merge combines the encoder representation with the previous decoder output. The decoder then applies sliding-window attention to its recent history, cross-attention to encoder memory restricted to the current prefix, and a feed-forward block, in that order at every layer.
 
 Both the decoder output and its per-layer attention caches carry forward to the next token. The output feeds into the next gated merge; the caches supply recent keys and values for sliding-window attention. In this repository, **feedback** refers specifically to the output-to-merge path: removing it leaves the attention caches and encoder memory intact. See [Section 2 of the report](REPORT.md#2-implementation-and-verification) for implementation and verification details.
@@ -41,12 +43,14 @@ All models have about 59K parameters, are matched in parameter count but not com
 - **Reproducibility:** training is deterministic on one CPU thread, and reruns reproduce earlier loss histories bit for bit across commits.
 
 ```
-model.py, encoder.py, decoder.py,      RLT, component by component
-memory.py, merge.py, window_cache.py,
-layers.py
-baselines.py                           Transformer and GRU baselines
-task.py                                Parity and five-state program generators
-objectives.py                          Losses and accuracy metrics
+rlt/                                   Reusable Python package
+  model.py                             Full recurrent model and state
+  encoder.py, decoder.py               Encoder and recurrent decoder
+  memory.py, window_cache.py            Encoder memory and decoder caches
+  merge.py, layers.py                   Gated merge and shared building blocks
+  baselines.py                         Transformer and GRU baselines
+  task.py                              Parity and five-state program generators
+  objectives.py                        Losses and accuracy metrics
 train.py                               Deterministic training runner
 run_sweep.py                           Runs one config over several seeds
 compare.py                             Aggregates results; refuses unfair comparisons
@@ -54,7 +58,14 @@ configs/                               One JSON file per model, task, and experi
 results/                               Results for every run, plus figures
 analysis/                              Diagnostic and plotting scripts
 tests/                                 The test suite
+conftest.py                            Import compatibility for the locked tests
 ```
+
+Import reusable components through the package, for example
+`from rlt.model import RLTModel`. Run the training, sweep, comparison, and analysis
+commands from the repository root as shown below. The test compatibility file
+maps the tests' original module names to the same `rlt` modules, so the locked
+tests do not need edits.
 
 ## Setup
 

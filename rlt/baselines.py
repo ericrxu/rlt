@@ -3,8 +3,8 @@
 import torch
 from torch import nn
 
-from encoder import Encoder
-from layers import RMSNorm
+from .encoder import Encoder
+from .layers import RMSNorm
 
 
 class TransformerBaseline(nn.Module):

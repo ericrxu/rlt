@@ -5,7 +5,7 @@ from dataclasses import dataclass
 import torch
 from torch import nn
 
-from layers import RMSNorm, apply_rope
+from .layers import RMSNorm, apply_rope
 
 
 @dataclass(frozen=True)

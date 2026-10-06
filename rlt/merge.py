@@ -3,7 +3,7 @@
 import torch
 from torch import nn
 
-from layers import RMSNorm
+from .layers import RMSNorm
 
 
 class Merge(nn.Module):
