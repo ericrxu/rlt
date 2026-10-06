@@ -13,10 +13,10 @@ import subprocess
 import numpy as np
 import torch
 
-from baselines import GRUBaseline, TransformerBaseline
-from model import RLTModel
-from objectives import final_state_loss, state_tracking_accuracy, state_tracking_loss
-from task import BOS, generate_five_state, generate_parity
+from rlt.baselines import GRUBaseline, TransformerBaseline
+from rlt.model import RLTModel
+from rlt.objectives import final_state_loss, state_tracking_accuracy, state_tracking_loss
+from rlt.task import BOS, generate_five_state, generate_parity
 
 
 @dataclass(frozen=True)
